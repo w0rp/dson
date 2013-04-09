@@ -1,0 +1,2118 @@
+/*
+Copyright (c) 2013, w0rp <moebiuspersona@gmail.com>
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
+import std.conv;
+import std.exception;
+import std.stdio;
+import std.traits;
+import std.range;
+import std.uni;
+
+template isJSONPrimitive(T) {
+    enum isJSONPrimitive = __traits(isArithmetic, T)
+        || is(T == typeof(null))
+        || is(T == string);
+}
+
+template isJSONArray(T) {
+    enum isJSONArray = !isJSONPrimitive!T && isArray!T && (
+           isJSONPrimitive!(ElementType!T)
+        || isJSON!(ElementType!T));
+}
+
+template isJSONObject(T) {
+    static if(__traits(isAssociativeArray, T)) {
+        enum isJSONObject = is(KeyType!T == string) && isJSON!(ValueType!T);
+    } else {
+        enum isJSONObject = false;
+    }
+}
+
+template isJSON(T) {
+    immutable bool isJSON = is(T == JSON) || isJSONPrimitive!T
+        || isJSONArray!T || isJSONObject!T;
+}
+
+enum JSON_TYPE : byte
+{
+    NULL, // NULL comes first so the initial type is null.
+    BOOL,
+    STRING,
+    INT,
+    UINT,
+    FLOAT,
+    OBJECT,
+    ARRAY
+}
+
+struct JSON {
+public:
+    static @safe pure nothrow JSON arr() {
+        JSON array;
+        array._array = null;
+        array._type = JSON_TYPE.ARRAY;
+
+        return array;
+    }
+
+    static @safe pure nothrow JSON obj() {
+        JSON object;
+        object._object = null;
+        object._type = JSON_TYPE.OBJECT;
+
+        return object;
+    }
+private:
+    union {
+        bool _boolean;
+        string _str;
+        long _integer;
+        ulong _uinteger;
+        real _floating;
+        JSON[string] _object;
+        JSON[] _array;
+    }
+
+    JSON_TYPE _type;
+public:
+    @safe pure nothrow this(T)(inout(T) val) inout {
+        static if(is(T == JSON)) {
+            this = val;
+        } else static if(is(T == bool)) {
+            _boolean = val;
+            _type = JSON_TYPE.BOOL;
+        } else static if(__traits(isUnsigned, T)) {
+            _uinteger = val;
+            _type = JSON_TYPE.UINT;
+        } else static if(__traits(isIntegral, T)) {
+            _integer = val;
+            _type = JSON_TYPE.INT;
+        } else static if(__traits(isFloating, T)) {
+            _floating = val;
+            _type = JSON_TYPE.FLOAT;
+        } else static if(is(T == typeof(null))) {
+            // This must come before the implicit
+            // array conversion.
+            _uinteger = 0;
+            _type = JSON_TYPE.NULL;
+        } else static if(is(T : string)) {
+            _str = val;
+            _type = JSON_TYPE.STRING;
+        } else static if(is(T : JSON[])) {
+            _array = val;
+            _type = JSON_TYPE.ARRAY;
+        } else static if(is(T == JSON[string])) {
+            _object = val;
+            _type = JSON_TYPE.OBJECT;
+        } else {
+            static assert(false, "Invalid type for JSON!");
+        }
+    }
+
+    @safe pure nothrow void opAssign(T)(T val) {
+        static if(is(T == JSON)) {
+            // We can avoid a copy for JSON types.
+            this = val;
+        } else {
+            // Rewrite assignment into a copy by creating a new struct.
+            JSON j = val;
+            this = j;
+        }
+    }
+
+    @safe pure nothrow @property JSON_TYPE type() const {
+        return _type;
+    }
+
+
+    /**
+     * Returns: True if this JSON value contains a numeric type.
+     */
+    @safe pure nothrow @property bool isNum() const {
+    with(JSON_TYPE) switch(_type) {
+    case BOOL, UINT, INT, FLOAT:
+        return true;
+    default:
+        return false;
+    }
+    }
+
+    /**
+     * Returns: true if the value is a string.
+     */
+    @safe pure nothrow @property bool isStr() const {
+    with(JSON_TYPE) switch(_type) {
+    case STRING:
+        return true;
+    default:
+        return false;
+    }
+    }
+
+    /**
+     * Returns: true if this JSON value is null.
+     */
+    @safe pure nothrow @property bool isNull() const {
+        return _type == JSON_TYPE.NULL;
+    }
+
+    /**
+     * Returns: true if this JSON value is an array.
+     */
+    @safe pure nothrow @property bool isArr() const {
+        return _type == JSON_TYPE.ARRAY;
+    }
+
+    /**
+     * Returns: true if this JSON value is an object.
+     */
+    @safe pure nothrow @property bool isObj() const {
+        return _type == JSON_TYPE.OBJECT;
+    }
+
+    /**
+     * Returns: A reference to the JSON array stored in this object.
+     * Throws: Exception when the JSON type is not an array.
+     */
+    @safe pure @property ref inout(JSON[]) innerArray() inout {
+        if (_type != JSON_TYPE.ARRAY) {
+            throw new Exception("JSON value is not an array!");
+        }
+
+        return _array;
+    }
+
+    /**
+     * Returns: A reference to the JSON object stored in this object.
+     * Throws: Exception when the JSON type is not an object.
+     */
+    @safe pure @property ref inout(JSON[string]) innerObject() inout {
+        if (_type != JSON_TYPE.OBJECT) {
+            throw new Exception("JSON value is not an object!");
+        }
+
+        return _object;
+    }
+
+    /**
+     * Returns: The length of the inner JSON array or object.
+     * Throws: Exception when the JSON type is not an array or object.
+     */
+    @property size_t length() const {
+        if (_type == JSON_TYPE.ARRAY) {
+           return _array.length;
+        } if (_type == JSON_TYPE.OBJECT) {
+           return _object.length;
+        } else {
+            throw new Exception("length called on non array or object type.");
+        }
+    }
+
+    /**
+     * Set the length of the inner JSON array.
+     * Throws: Exception when the JSON type is not an array.
+     */
+    @safe pure @property void length(size_t len) {
+        if (_type == JSON_TYPE.ARRAY) {
+           _array.length = len;
+        } else {
+            throw new Exception("Cannot set length on non array!");
+        }
+    }
+
+    string toString() const {
+    with(JSON_TYPE) final switch (_type) {
+    case BOOL:
+        return _boolean ? "true" : "false";
+    case UINT:
+        return to!string(_uinteger);
+    case INT:
+        return to!string(_integer);
+    case FLOAT:
+        return to!string(_floating);
+    case STRING:
+        return _str;
+    case ARRAY:
+        return to!string(_array);
+    case OBJECT:
+        return to!string(_object);
+    case NULL:
+        return "null";
+    }
+    }
+
+    // Casting to bool must never throw an exception.
+    nothrow inout(T) opCast(T)() inout if(is(T == bool)) {
+        with(JSON_TYPE) final switch (_type) {
+        case BOOL:
+            return cast(T) _boolean;
+        case UINT:
+            return cast(T) _uinteger;
+        case INT:
+            return cast(T) _integer;
+        case FLOAT:
+            return cast(T) _floating;
+        case STRING:
+            return _str.length > 0;
+        case ARRAY:
+            return _array.length > 0;
+        case OBJECT:
+            try {
+                return _object.length > 0;
+            } catch (Exception ex) {
+                return false;
+            }
+        case NULL:
+            return false;
+        }
+    }
+
+    // Casting otherwise can throw, but is pure.
+    pure inout(T) opCast(T)() inout if(!is(T == bool)) {
+        static if (__traits(isArithmetic, T)) {
+            with(JSON_TYPE) switch (_type) {
+            case BOOL:
+                return cast(T) _boolean;
+            case UINT:
+                return cast(T) _uinteger;
+            case INT:
+                return cast(T) _integer;
+            case FLOAT:
+                return cast(T) _floating;
+            default:
+                throw new Exception("cast to number failed!");
+            }
+        } else static if (is(T == string)) {
+            if (_type != JSON_TYPE.STRING) {
+                throw new Exception("cast(string) failed!");
+            }
+
+            return _str;
+        } else static if(is(T == JSON[])) {
+            if (_type != JSON_TYPE.ARRAY) {
+                throw new Exception("JSON value is not an array!");
+            }
+
+            return _array;
+        } else static if(is(T == JSON[string])) {
+            if (_type != JSON_TYPE.OBJECT) {
+                throw new Exception("JSON value is not an object!");
+            }
+
+            return _object;
+        }
+    }
+
+    @safe pure
+    JSON opBinary(string op, T)(T val) if(op == "~") {
+        static if(is(T == JSON)) {
+            // We can avoid a copy for JSON types.
+            return JSON(innerArray ~ val);
+        } else {
+            return JSON(innerArray ~ JSON(val));
+        }
+    }
+
+    @safe pure
+    void opOpAssign(string op, T)(T val) if(op == "~") {
+        static if(is(T == JSON)) {
+            // We can avoid a copy for JSON types.
+            innerArray ~= val;
+        } else {
+            innerArray ~= JSON(val);
+        }
+    }
+
+    @safe pure inout(JSON) opIndex(size_t index) inout {
+        return innerArray[index];
+    }
+
+    @safe pure inout(JSON) opIndex(string key) inout {
+        return innerObject[key];
+    }
+
+    @safe pure void opIndexAssign(T)(T value, size_t index) {
+        innerArray[index] = value;
+    }
+
+    pure void opIndexAssign(T)(T value, string key) {
+        innerObject[key] = value;
+    }
+
+    pure JSON* opBinaryRight(string op)(string key) if(op == "in") {
+        return key in innerObject;
+    }
+
+    int opApply(int delegate(ref JSON val) dg) {
+        int result;
+
+        if (_type == JSON_TYPE.ARRAY) {
+            foreach(ref val; _array) {
+                if((result = dg(val)) > 0) {
+                    break;
+                }
+            }
+        } else if (_type == JSON_TYPE.OBJECT) {
+            foreach(ref val; _object) {
+                if((result = dg(val)) > 0) {
+                    break;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    int opApply(int delegate(string key, ref JSON val) dg) {
+        int result;
+
+        if (_type == JSON_TYPE.OBJECT) {
+            foreach(key, ref val; _object) {
+                if((result = dg(key, val)) > 0) {
+                    break;
+                }
+            }
+        } else if(_type == JSON_TYPE.ARRAY) {
+            foreach(index, ref val; _array) {
+                if((result = dg(to!string(index), val)) > 0) {
+                    break;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    int opApply(int delegate(size_t index, ref JSON val) dg) {
+        if(_type == JSON_TYPE.OBJECT) {
+            throw new Exception("index-value foreach not supported for "
+                ~ "objects!");
+        }
+
+        int result;
+
+        if (_type == JSON_TYPE.ARRAY) {
+            foreach(index, ref val; _array) {
+                if((result = dg(index, val)) > 0) {
+                    break;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    int opApplyReverse(int delegate(ref JSON val) dg) {
+        if (_type == JSON_TYPE.OBJECT) {
+            // Map are unordered, so the same code for foreach can be used.
+            return opApply(dg);
+        }
+
+        int result;
+
+        if (_type == JSON_TYPE.ARRAY) {
+            foreach_reverse(ref val; _array) {
+                if((result = dg(val)) > 0) {
+                    break;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    int opApplyReverse(int delegate(string key, ref JSON val) dg) {
+        if (_type == JSON_TYPE.OBJECT) {
+            return opApply(dg);
+        }
+
+        int result;
+
+        if(_type == JSON_TYPE.ARRAY) {
+            foreach_reverse(index, ref val; _array) {
+                if((result = dg(to!string(index), val)) > 0) {
+                    break;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    int opApplyReverse(int delegate(size_t index, ref JSON val) dg) {
+        if(_type == JSON_TYPE.OBJECT) {
+            throw new Exception("index-value foreach_reverse not supported "
+                ~ "for objects!");
+        }
+
+        int result;
+
+        if (_type == JSON_TYPE.ARRAY) {
+            foreach_reverse(index, ref val; _array) {
+                if((result = dg(index, val)) > 0) {
+                    break;
+                }
+            }
+        }
+
+        return result;
+    }
+}
+
+JSON convertJSON(T)(T object) {
+    static if (is(T == JSON)) {
+        // No conversion neeeded.
+        return object;
+    } else static if(is(T == JSON[]) || is(T == JSON[string])
+        || isJSONPrimitive!T) {
+        // This is a straight conversion.
+        return JSON(object);
+    } else static if(isJSONArray!T)  {
+        auto arr = new JSON[](object.length);
+
+        for (size_t i = 0; i < object.length; ++i) {
+            arr[i] = convertJSON(object[i]);
+        }
+
+        return JSON(arr);
+    } else static if(isJSONObject!T) {
+        JSON[string] map;
+
+        foreach(key, val; object) {
+            map[key] = convertJSON(val);
+        }
+
+        return JSON(map);
+    } else {
+        static assert(false, "Invalid type for convertJSON!");
+    }
+}
+
+private void writeJSONString(ref string result, string str) {
+    result ~= '"';
+
+    foreach(dchar c; str) {
+        switch (c) {
+        case '"':
+            result ~= `\"`;
+        break;
+        case '\\':
+            result ~= `\\`;
+        break;
+        case '/':
+            result ~= `\/`;
+        break;
+        case '\b':
+            result ~= `\b`;
+        break;
+        case '\f':
+            result ~= `\f`;
+        break;
+        case '\n':
+            result ~= `\n`;
+        break;
+        case '\r':
+            result ~= `\r`;
+        break;
+        case '\t':
+            result ~= `\t`;
+        break;
+        default:
+            // We'll just skip control characters.
+            if (!isControl(c)) {
+                result ~= c;
+            }
+        }
+    }
+
+    result ~= '"';
+}
+
+private void writeJSONArray(ref string result, in JSON[] array) {
+    result ~= '[';
+
+    for (size_t i = 0; i < array.length; ++i) {
+        if (i != 0) {
+            result ~= ',';
+        }
+
+        writeJSON(result, array[i]);
+    }
+
+    result ~= ']';
+}
+
+private void writeJSONObject(ref string result, in JSON[string] object) {
+    result ~= '{';
+
+    bool first = true;
+
+    foreach(key, val; object) {
+        if (!first) {
+            result ~= ',';
+        }
+
+        writeJSONString(result, key);
+        result ~= ':';
+        writeJSON(result, val);
+
+        first = false;
+    }
+
+    result ~= '}';
+}
+
+private void writeJSON(ref string result, in JSON json) {
+    with(JSON_TYPE) final switch (json.type) {
+    case NULL:
+        result ~= "null";
+    break;
+    case BOOL:
+        result ~= json._boolean ? "true" : "false";
+    break;
+    case INT:
+        result ~= to!string(json._integer);
+    break;
+    case UINT:
+        result ~= to!string(json._uinteger);
+    break;
+    case FLOAT:
+        result ~= to!string(json._floating);
+    break;
+    case STRING:
+        writeJSONString(result, json._str);
+    break;
+    case ARRAY:
+        writeJSONArray(result, json._array);
+    break;
+    case OBJECT:
+        writeJSONObject(result, json._object);
+    break;
+    }
+}
+
+string toJSON(in JSON json) {
+    string result;
+
+    writeJSON(result, json);
+
+    return result;
+}
+
+// TODO: Read JSON.
+// TODO: immutable JSON?
+// TODO: opEquals.
+
+// Test the templates.
+unittest {
+    assert(isJSONPrimitive!(typeof(null)));
+    assert(isJSONPrimitive!bool);
+    assert(isJSONPrimitive!int);
+    assert(isJSONPrimitive!uint);
+    assert(isJSONPrimitive!real);
+    assert(isJSONPrimitive!string);
+}
+
+unittest {
+    assert(isJSON!(typeof(null)));
+    assert(isJSON!bool);
+    assert(isJSON!int);
+    assert(isJSON!uint);
+    assert(isJSON!real);
+    assert(isJSON!string);
+}
+
+unittest {
+    assert(isJSONArray!(string[]));
+    assert(isJSONArray!(int[]));
+    assert(isJSONArray!(int[][]));
+    assert(!isJSONArray!(string));
+    assert(isJSONArray!(string[][][]));
+    assert(isJSONArray!(int[string][][]));
+}
+
+unittest {
+    assert(isJSONObject!(int[string]));
+    assert(!isJSONObject!(string[bool]));
+    assert(isJSONObject!(real[string]));
+    assert(isJSONObject!(int[][string]));
+}
+
+// Test type return values.
+unittest {
+    bool x = true;
+    JSON j = x;
+
+    assert(j.type == JSON_TYPE.BOOL);
+}
+
+unittest {
+    uint x = 3;
+    JSON j = x;
+
+    assert(j.type == JSON_TYPE.UINT);
+}
+
+unittest {
+    int x = 3;
+    JSON j = x;
+
+    assert(j.type == JSON_TYPE.INT);
+}
+
+unittest {
+    float x = 7.3;
+    JSON j = x;
+
+    assert(j.type == JSON_TYPE.FLOAT);
+}
+
+unittest {
+    string x = "";
+    JSON j = x;
+
+    assert(j.type == JSON_TYPE.STRING);
+}
+
+unittest {
+    JSON[] x;
+    JSON j = x;
+
+    assert(j.type == JSON_TYPE.ARRAY);
+}
+
+unittest {
+    JSON[2] x;
+    JSON j = x;
+
+    assert(j.type == JSON_TYPE.ARRAY);
+}
+
+unittest {
+    JSON[string] x;
+    JSON j = x;
+
+    assert(j.type == JSON_TYPE.OBJECT);
+}
+
+unittest {
+    JSON j = null;
+
+    assert(j.type == JSON_TYPE.NULL);
+}
+
+// It's important to make sure than normal assignment still
+// works properly.
+unittest {
+    JSON j1;
+    JSON j2 = j1;
+
+    assert(j2.type == JSON_TYPE.NULL);
+}
+
+// Test valid boolean conversions
+
+unittest {
+    bool x = false;
+    JSON j = x;
+
+    assert(cast(bool) j == false);
+}
+
+unittest {
+    bool x = true;
+    JSON j = x;
+
+    assert(cast(bool) j == true);
+}
+
+unittest {
+    int x = 0;
+    JSON j = x;
+
+    assert(cast(bool) j == false);
+}
+
+unittest {
+    int x = -2;
+    JSON j = x;
+
+    assert(cast(bool) j == true);
+}
+
+unittest {
+    uint x = 0;
+    JSON j = x;
+
+    assert(cast(bool) j == false);
+}
+
+unittest {
+    uint x = 2;
+    JSON j = x;
+
+    assert(cast(bool) j == true);
+}
+
+unittest {
+    float x = 0;
+    JSON j = x;
+
+    assert(cast(bool) j == false);
+}
+
+unittest {
+    float x = 2;
+    JSON j = x;
+
+    assert(cast(bool) j == true);
+}
+
+// Test special boolean conversions.
+
+unittest {
+    string x;
+    JSON j = x;
+
+    assert(cast(bool) j == false);
+}
+
+unittest {
+    string x = "wat";
+    JSON j = x;
+
+    assert(cast(bool) j == true);
+}
+
+unittest {
+    JSON[] x;
+    JSON j = x;
+
+    assert(cast(bool) j == false);
+}
+
+unittest {
+    JSON[] x;
+    x.length = 1;
+    JSON j = x;
+
+    assert(cast(bool) j == true);
+}
+
+unittest {
+    JSON[string] x;
+    JSON j = x;
+
+    assert(cast(bool) j == false);
+}
+
+unittest {
+    JSON[string] x;
+    x["wat"] = null;
+    JSON j = x;
+
+    assert(cast(bool) j == true);
+}
+
+unittest {
+    JSON j = null;
+
+    assert(cast(bool) j == false);
+}
+
+// Test valid signed integer conversions
+unittest {
+    bool x = false;
+    JSON j = x;
+
+    assert(cast(long) j == 0);
+}
+
+unittest {
+    bool x = true;
+    JSON j = x;
+
+    assert(cast(int) j == 1);
+}
+
+unittest {
+    int x = 0;
+    JSON j = x;
+
+    assert(cast(byte) j == 0);
+}
+
+unittest {
+    int x = -2;
+    JSON j = x;
+
+    assert(cast(short) j == -2);
+}
+
+unittest {
+    uint x = 0;
+    JSON j = x;
+
+    assert(cast(int) j == 0);
+}
+
+unittest {
+    uint x = 2;
+    JSON j = x;
+
+    assert(cast(short) j == 2);
+}
+
+unittest {
+    float x = 0;
+    JSON j = x;
+
+    assert(cast(int) j == 0);
+}
+
+unittest {
+    float x = 2;
+    JSON j = x;
+
+    assert(cast(int) j == 2);
+}
+
+// Test invalid signed integer conversions.
+
+unittest {
+    string x;
+    JSON j = x;
+
+    assertThrown(cast(int) j);
+}
+
+unittest {
+    JSON[] x;
+    JSON j = x;
+
+    assertThrown(cast(int) j);
+}
+
+unittest {
+    JSON[string] x;
+    JSON j = x;
+
+    assertThrown(cast(int) j);
+}
+
+// Test valid unsigned integer conversions
+unittest {
+    int x = -2;
+    JSON j = x;
+
+    assert(cast(ulong) j == cast(ulong) x);
+}
+
+unittest {
+    float x = 0;
+    JSON j = x;
+
+    assert(cast(ulong) j == 0);
+}
+
+// Test invalid unsigned integer conversions.
+
+unittest {
+    string x;
+    JSON j = x;
+
+    assertThrown(cast(ulong) j);
+}
+
+unittest {
+    JSON[] x;
+    JSON j = x;
+
+    assertThrown(cast(ulong) j);
+}
+
+unittest {
+    JSON[string] x;
+    JSON j = x;
+
+    assertThrown(cast(ulong) j);
+}
+
+// Test valid real conversions
+unittest {
+    bool x = false;
+    JSON j = x;
+
+    assert(cast(real) j == 0.0);
+}
+
+unittest {
+    bool x = true;
+    JSON j = x;
+
+    assert(cast(real) j == 1.0);
+}
+
+unittest {
+    int x = 33;
+    JSON j = x;
+
+    assert(cast(real) j == 33.0);
+}
+
+unittest {
+    int x = -2;
+    JSON j = x;
+
+    assert(cast(real) j == -2.0);
+}
+
+unittest {
+    uint x = 0;
+    JSON j = x;
+
+    assert(cast(real) j == 0);
+}
+
+unittest {
+    uint x = 25;
+    JSON j = x;
+
+    assert(cast(real) j == 25);
+}
+
+unittest {
+    float x = 0;
+    JSON j = x;
+
+    assert(cast(real) j == 0);
+}
+
+unittest {
+    float x = 2.5;
+    JSON j = x;
+
+    assert(cast(real) j == 2.5);
+}
+
+// Test invalid real conversions.
+
+unittest {
+    string x;
+    JSON j = x;
+
+    assertThrown(cast(real) j);
+}
+
+unittest {
+    JSON[] x;
+    JSON j = x;
+
+    assertThrown(cast(real) j);
+}
+
+unittest {
+    JSON[string] x;
+    JSON j = x;
+
+    assertThrown(cast(real) j);
+}
+
+// Test valid string casting.
+unittest {
+    JSON x = "wat";
+
+    assert(cast(string) x == "wat");
+}
+
+// Test invalid string casting.
+unittest {
+    JSON x;
+
+    assertThrown(cast(string) x);
+}
+
+unittest {
+    JSON x = 2u;
+
+    assertThrown(cast(string) x);
+}
+
+unittest {
+    JSON x = -2;
+
+    assertThrown(cast(string) x);
+}
+
+unittest {
+    JSON x = true;
+
+    assertThrown(cast(string) x);
+}
+
+unittest {
+    JSON[] arr;
+    JSON x = arr;
+
+    assertThrown(cast(string) x);
+}
+
+unittest {
+    JSON[string] obj;
+    JSON x = obj;
+
+    assertThrown(cast(string) x);
+}
+
+// Test toString()
+unittest {
+    bool x = false;
+    JSON j = x;
+
+    assert(j.toString() == "false");
+}
+
+unittest {
+    bool x = true;
+    JSON j = x;
+
+    assert(j.toString() == "true");
+}
+
+unittest {
+    int x = 33;
+    JSON j = x;
+
+    assert(j.toString() == "33");
+}
+
+unittest {
+    int x = -2;
+    JSON j = x;
+
+    assert(j.toString() == "-2");
+}
+
+unittest {
+    uint x = 0;
+    JSON j = x;
+
+    assert(j.toString() == "0");
+}
+
+unittest {
+    uint x = 25;
+    JSON j = x;
+
+    assert(j.toString() == "25");
+}
+
+unittest {
+    float x = 0;
+    JSON j = x;
+
+    assert(j.toString() == "0");
+}
+
+unittest {
+    float x = 2.5;
+    JSON j = x;
+
+    assert(j.toString() == "2.5");
+}
+
+unittest {
+    string x = "abc";
+    JSON j = x;
+
+    assert(j.toString() == "abc");
+}
+
+// Test JSON -> JSON cast
+unittest {
+    JSON x;
+    JSON y = cast(JSON) x;
+}
+
+// Test valid JSON -> JSON[] cast
+unittest {
+    JSON[] arr;
+    JSON x = arr;
+
+    assert(cast(JSON[]) x == arr);
+}
+
+// Test invalid JSON -> JSON[] cast
+unittest {
+    JSON x;
+
+    assertThrown(cast(JSON[]) x);
+}
+
+// Test valid JSON -> JSON[string] cast
+unittest {
+    JSON[string] map;
+    JSON x = map;
+
+    assert(cast(JSON[string]) x == map);
+}
+
+// Test invalid JSON -> JSON[string] cast
+unittest {
+    JSON x;
+
+    assertThrown(cast(JSON[string]) x);
+}
+
+
+// Test innerArray
+unittest {
+    bool b = true;
+    uint un = 1;
+    int n = 1;
+    real r = 1.0;
+    string str = "";
+    JSON[] arr;
+    JSON[string] obj;
+
+    JSON j;
+    assertThrown(j.innerArray);
+
+    j = b;
+    assertThrown(j.innerArray);
+
+    j = un;
+    assertThrown(j.innerArray);
+
+    j = n;
+    assertThrown(j.innerArray);
+
+    j = r;
+    assertThrown(j.innerArray);
+
+    j = str;
+    assertThrown(j.innerArray);
+
+    j = arr;
+    assert(j.innerArray == arr);
+
+    j = obj;
+    assertThrown(j.innerArray);
+}
+
+// Test obj
+unittest {
+    bool b = true;
+    uint un = 1;
+    int n = 1;
+    real r = 1.0;
+    string str = "";
+    JSON[] arr;
+    JSON[string] obj;
+
+    JSON j;
+    assertThrown(j.innerObject);
+
+    j = b;
+    assertThrown(j.innerObject);
+
+    j = un;
+    assertThrown(j.innerObject);
+
+    j = n;
+    assertThrown(j.innerObject);
+
+    j = r;
+    assertThrown(j.innerObject);
+
+    j = str;
+    assertThrown(j.innerObject);
+
+    j = arr;
+    assertThrown(j.innerObject);
+
+    j = obj;
+    assert(j.innerObject == obj);
+}
+
+// Test isNum
+unittest {
+    bool b = true;
+    uint un = 1;
+    int n = 1;
+    real r = 1.0;
+    string str = "";
+    JSON[] arr;
+    JSON[string] obj;
+
+    JSON j;
+    assert(!j.isNum);
+
+    j = b;
+    assert(j.isNum);
+
+    j = un;
+    assert(j.isNum);
+
+    j = n;
+    assert(j.isNum);
+
+    j = r;
+    assert(j.isNum);
+
+    j = str;
+    assert(!j.isNum);
+
+    j = arr;
+    assert(!j.isNum);
+
+    j = obj;
+    assert(!j.isNum);
+}
+
+// Test isStr
+unittest {
+    bool b = true;
+    uint un = 1;
+    int n = 1;
+    real r = 1.0;
+    string str = "";
+    JSON[] arr;
+    JSON[string] obj;
+
+    JSON j;
+    assert(!j.isNum);
+
+    j = b;
+    assert(!j.isStr);
+
+    j = un;
+    assert(!j.isStr);
+
+    j = n;
+    assert(!j.isStr);
+
+    j = r;
+    assert(!j.isStr);
+
+    j = str;
+    assert(j.isStr);
+
+    j = arr;
+    assert(!j.isStr);
+
+    j = obj;
+    assert(!j.isStr);
+}
+
+// Test isNull
+unittest {
+    bool b = true;
+    uint un = 1;
+    int n = 1;
+    real r = 1.0;
+    string str = "";
+    JSON[] arr;
+    JSON[string] obj;
+
+    JSON j;
+    assert(j.isNull);
+
+    j = b;
+    assert(!j.isNull);
+
+    j = un;
+    assert(!j.isNull);
+
+    j = n;
+    assert(!j.isNull);
+
+    j = r;
+    assert(!j.isNull);
+
+    j = str;
+    assert(!j.isNull);
+
+    j = arr;
+    assert(!j.isNull);
+
+    j = obj;
+    assert(!j.isNull);
+}
+
+// Test isArr
+unittest {
+    bool b = true;
+    uint un = 1;
+    int n = 1;
+    real r = 1.0;
+    string str = "";
+    JSON[] arr;
+    JSON[string] obj;
+
+    JSON j;
+    assert(!j.isArr);
+
+    j = b;
+    assert(!j.isArr);
+
+    j = un;
+    assert(!j.isArr);
+
+    j = n;
+    assert(!j.isArr);
+
+    j = r;
+    assert(!j.isArr);
+
+    j = str;
+    assert(!j.isArr);
+
+    j = arr;
+    assert(j.isArr);
+
+    j = obj;
+    assert(!j.isArr);
+}
+
+// Test isObj
+unittest {
+    bool b = true;
+    uint un = 1;
+    int n = 1;
+    real r = 1.0;
+    string str = "";
+    JSON[] arr;
+    JSON[string] obj;
+
+    JSON j;
+    assert(!j.isObj);
+
+    j = b;
+    assert(!j.isObj);
+
+    j = un;
+    assert(!j.isObj);
+
+    j = n;
+    assert(!j.isObj);
+
+    j = r;
+    assert(!j.isObj);
+
+    j = str;
+    assert(!j.isObj);
+
+    j = arr;
+    assert(!j.isObj);
+
+    j = obj;
+    assert(j.isObj);
+}
+
+// Test JSON.arr()
+unittest {
+    JSON arr = JSON.arr();
+
+    assert(arr.isArr);
+    assert(arr.length == 0);
+}
+
+// Test array concatenate.
+unittest {
+    JSON j = JSON.arr();
+
+    JSON[] arr;
+    JSON[string] obj;
+    JSON otherJ = 3;
+
+    j = j ~ null;
+    j = j ~ true;
+    j = j ~ 1u;
+    j = j ~ 1;
+    j = j ~ 1.0;
+    j = j ~ "bla";
+    j = j ~ arr;
+    j = j ~ obj;
+    j = j ~ otherJ;
+
+    assert(j.innerArray[0].isNull);
+    assert(cast(bool) j.innerArray[1] == true);
+    assert(cast(uint) j.innerArray[2] == 1u);
+    assert(cast(int) j.innerArray[3] == 1);
+    assert(cast(real) j.innerArray[4] == 1.0);
+    assert(cast(string) j.innerArray[5] == "bla");
+    assert(j.innerArray[6].innerArray == []);
+    assert(j.innerArray[7].innerObject.length == 0);
+    assert(cast(int) j.innerArray[8] == 3);
+}
+
+// Test array append.
+unittest {
+    JSON j = JSON.arr();
+
+    JSON[] arr;
+    JSON[string] obj;
+    JSON otherJ = 3;
+
+    // It's important to use rvalues for these kinds of tests.
+    // Otherwise, we might end up with broken code because the overloads
+    // except references to lvalues.
+    j ~= null;
+    j ~= true;
+    j ~= 1u;
+    j ~= 1;
+    j ~= 1.0;
+    j ~= "bla";
+    j ~= arr;
+    j ~= obj;
+    j ~= otherJ;
+
+    assert(j.innerArray[0].isNull);
+    assert(cast(bool) j.innerArray[1] == true);
+    assert(cast(uint) j.innerArray[2] == 1u);
+    assert(cast(int) j.innerArray[3] == 1);
+    assert(cast(float) j.innerArray[4] == 1.0);
+    assert(cast(string) j.innerArray[5] == "bla");
+    assert(j.innerArray[6].innerArray == arr);
+    assert(j.innerArray[7].innerObject == obj);
+    assert(cast(int) j.innerArray[8] == 3);
+}
+
+// Test array index get.
+unittest {
+    JSON j = JSON.arr();
+
+    bool b = true;
+    uint un = 1;
+    int n = 1;
+    real r = 1.0;
+    string str = "bla";
+    JSON[] arr;
+    JSON[string] obj;
+    JSON otherJ = 3;
+
+    j.innerArray ~= JSON(null);
+    j.innerArray ~= JSON(b);
+    j.innerArray ~= JSON(un);
+    j.innerArray ~= JSON(n);
+    j.innerArray ~= JSON(r);
+    j.innerArray ~= JSON(str);
+    j.innerArray ~= JSON(arr);
+    j.innerArray ~= JSON(obj);
+    j.innerArray ~= otherJ;
+
+    assert(j[0].isNull);
+    assert(cast(bool) j[1] == b);
+    assert(cast(uint) j[2] == un);
+    assert(cast(int) j[3] == n);
+    assert(cast(real) j[4] == r);
+    assert(cast(string) j[5] == str);
+    assert(j[6].innerArray == arr);
+    assert(j[7].innerObject == obj);
+    assert(cast(int) j[8] == 3);
+}
+
+// Test array index set.
+unittest {
+    JSON j = JSON.arr();
+
+    JSON[] arr;
+    JSON[string] obj;
+    JSON otherJ = 3;
+
+    j.length = 9;
+
+    j[0] = null;
+    j[1] = true;
+    j[2] = 1u;
+    j[3] = 1;
+    j[4] = 1.0;
+    j[5] = "bla";
+    j[6] = arr;
+    j[7] = obj;
+    j[8] = otherJ;
+
+    assert(j[0].isNull);
+    assert(cast(bool) j[1] == true);
+    assert(cast(uint) j[2] == 1u);
+    assert(cast(int) j[3] == 1);
+    assert(cast(real) j[4] == 1.0);
+    assert(cast(string) j[5] == "bla");
+    assert(j[6].innerArray == arr);
+    assert(j[7].innerObject == obj);
+    assert(cast(int) j[8] == 3);
+}
+
+// Test JSON.obj()
+unittest {
+    JSON obj = JSON.obj();
+
+    assert(obj.isObj);
+    assert(obj.length == 0);
+}
+
+// Test object key get.
+unittest {
+    bool b = true;
+    uint un = 1;
+    int n = 1;
+    real r = 1.0;
+    string str = "bla";
+    JSON[] arr;
+    JSON[string] obj;
+    JSON otherJ = 3;
+
+    JSON[string] origObj;
+
+    origObj["a"] = JSON(null);
+    origObj["b"] = JSON(b);
+    origObj["c"] = JSON(un);
+    origObj["d"] = JSON(n);
+    origObj["e"] = JSON(r);
+    origObj["f"] = JSON(str);
+    origObj["g"] = JSON(arr);
+    origObj["h"] = JSON(obj);
+    origObj["i"] = otherJ;
+
+    JSON j = origObj;
+
+    assert(j["a"].isNull);
+    assert(cast(bool) j["b"] == b);
+    assert(cast(uint) j["c"] == un);
+    assert(cast(int) j["d"] == n);
+    assert(cast(real) j["e"] == r);
+    assert(cast(string) j["f"] == str);
+    assert(j["g"].arr.length == 0);
+    assert(j["h"].obj.length == 0);
+    assert(j["i"] == otherJ);
+}
+
+// Test object key set.
+unittest {
+    JSON[] arr;
+    JSON[string] obj;
+    JSON otherJ = 3;
+
+    JSON j = JSON.obj();
+
+    j["a"] = null;
+    j["b"] = true;
+    j["c"] = 1u;
+    j["d"] = 1;
+    j["e"] = 1.0;
+    j["f"] = "bla";
+    j["g"] = arr;
+    j["h"] = obj;
+    j["i"] = otherJ;
+
+    assert(j["a"].isNull);
+    assert(cast(bool) j["b"] == true);
+    assert(cast(uint) j["c"] == 1u);
+    assert(cast(int) j["d"] == 1);
+    assert(cast(real) j["e"] == 1.0);
+    assert(cast(string) j["f"] == "bla");
+    assert(j["g"].arr.length == 0);
+    assert(j["h"].obj.length == 0);
+    assert(j["i"] == otherJ);
+}
+
+// Test "in" operator for object.
+unittest {
+    JSON obj = JSON.obj();
+
+    obj["a"] = 347;
+    obj["b"] = true;
+    obj["c"] = "beepbeep";
+    obj["d"] = null;
+
+    assert(cast(int) (*("a" in obj)) == 347);
+    assert(cast(bool) (*("b" in obj)) == true);
+    assert(cast(string) (*("c" in obj)) == "beepbeep");
+    assert((*("d" in obj)).isNull);
+}
+
+// Test 'if' for various values
+unittest {
+    assert(!JSON(null));
+    assert(!JSON(false));
+    assert(JSON(true));
+    assert(JSON(1u));
+    assert(!JSON(0u));
+    assert(JSON(-1));
+    assert(!JSON(0));
+    assert(JSON(1.0));
+    assert(!JSON(0.0));
+    assert(JSON("wat"));
+    assert(!JSON(""));
+    assert(!JSON.arr());
+    assert(!JSON.obj());
+
+    auto arr = JSON.arr();
+    arr.length = 1;
+
+    assert(arr);
+
+    auto obj = JSON.obj();
+    obj["a"] = 1;
+
+    assert(obj);
+}
+
+// Test array value-only foreach for arrays.
+unittest {
+    JSON arr = JSON.arr();
+
+    arr ~= 347;
+    arr ~= true;
+    arr ~= "beepbeep";
+    arr ~= null;
+
+    int count = 0;
+
+    foreach(val; arr) {
+        final switch (count) {
+        case 0:
+            assert(cast(int) val == 347);
+        break;
+        case 1:
+            assert(cast(bool) val == true);
+        break;
+        case 2:
+            assert(cast(string) val == "beepbeep");
+        break;
+        case 3:
+            assert(val.isNull);
+        break;
+        }
+
+        ++count;
+    }
+
+    assert(count == 4);
+}
+
+// Test index-value foreach for arrays.
+unittest {
+    JSON arr = JSON.arr();
+
+    arr ~= 347;
+    arr ~= true;
+    arr ~= "beepbeep";
+    arr ~= null;
+
+    foreach(size_t index, val; arr) {
+        final switch (index) {
+        case 0:
+            assert(cast(int) val == 347);
+        break;
+        case 1:
+            assert(cast(bool) val == true);
+        break;
+        case 2:
+            assert(cast(string) val == "beepbeep");
+        break;
+        case 3:
+            assert(val.isNull);
+        break;
+        }
+    }
+}
+
+// Test value-only foreach for objects.
+unittest {
+    JSON obj = JSON.obj();
+
+    obj["a"] = 347;
+    obj["b"] = true;
+    obj["c"] = "beepbeep";
+    obj["d"] = null;
+
+    int count = 0;
+
+    foreach(val; obj) {
+        if (val.isNum) {
+            assert(cast(bool) val == true);
+        } else if(val.isStr) {
+            assert(cast(string) val == "beepbeep");
+        } else {
+            assert(val.isNull);
+        }
+
+        ++count;
+    }
+
+    assert(count == 4);
+}
+
+// Test key-value foreach for objects.
+unittest {
+    JSON obj = JSON.obj();
+
+    obj["a"] = 347;
+    obj["b"] = true;
+    obj["c"] = "beepbeep";
+    obj["d"] = null;
+
+    int count = 0;
+
+    foreach(string key, val; obj) {
+        final switch (key) {
+        case "a":
+            assert(cast(int) val == 347);
+        break;
+        case "b":
+            assert(cast(bool) val == true);
+        break;
+        case "c":
+            assert(cast(string) val == "beepbeep");
+        break;
+        case "d":
+            assert(val.isNull);
+        break;
+        }
+
+        ++count;
+    }
+
+    assert(count == 4);
+}
+
+// Test key-value foreach for arrays.
+unittest {
+    JSON arr = JSON.arr();
+
+    arr ~= 347;
+    arr ~= true;
+    arr ~= "beepbeep";
+    arr ~= null;
+
+    foreach(string key, val; arr) {
+        final switch (key) {
+        case "0":
+            assert(cast(int) val == 347);
+        break;
+        case "1":
+            assert(cast(bool) val == true);
+        break;
+        case "2":
+            assert(cast(string) val == "beepbeep");
+        break;
+        case "3":
+            assert(val.isNull);
+        break;
+        }
+    }
+}
+
+// Test that index-value foreach for objects causes an exception.
+unittest {
+    JSON obj = JSON.obj();
+
+    bool failed = false;
+
+    try {
+        foreach(size_t index, val; obj) {}
+    } catch (Exception ex) {
+        failed = true;
+    }
+
+    assert(failed, "foreach (size_t index, val) did not throw "
+    ~ "for an object!");
+}
+
+// Test array value-only foreach_reverse for arrays.
+unittest {
+    JSON arr = JSON.arr();
+
+    arr ~= 347;
+    arr ~= true;
+    arr ~= "beepbeep";
+    arr ~= null;
+
+    int count = 3;
+
+    foreach_reverse(val; arr) {
+        final switch (count) {
+        case 0:
+            assert(cast(int) val == 347);
+        break;
+        case 1:
+            assert(cast(bool) val == true);
+        break;
+        case 2:
+            assert(cast(string) val == "beepbeep");
+        break;
+        case 3:
+            assert(val.isNull);
+        break;
+        }
+
+        --count;
+    }
+}
+
+// Test index-value foreach_reverse for arrays.
+unittest {
+    JSON arr = JSON.arr();
+
+    arr ~= 347;
+    arr ~= true;
+    arr ~= "beepbeep";
+    arr ~= null;
+
+    int count = 3;
+
+    foreach_reverse(size_t index, val; arr) {
+        assert(index == count--);
+
+        final switch (index) {
+        case 0:
+            assert(cast(int) val == 347);
+        break;
+        case 1:
+            assert(cast(bool) val == true);
+        break;
+        case 2:
+            assert(cast(string) val == "beepbeep");
+        break;
+        case 3:
+            assert(val.isNull);
+        break;
+        }
+    }
+}
+
+// Test value-only foreach_reverse for objects.
+unittest {
+    JSON obj = JSON.obj();
+
+    obj["a"] = 347;
+    obj["b"] = true;
+    obj["c"] = "beepbeep";
+    obj["d"] = null;
+
+    int count = 0;
+
+    foreach_reverse(val; obj) {
+        if (val.isNum) {
+            assert(cast(bool) val == true);
+        } else if(val.isStr) {
+            assert(cast(string) val == "beepbeep");
+        } else {
+            assert(val.isNull);
+        }
+
+        ++count;
+    }
+
+    assert(count == 4);
+}
+
+// Test key-value foreach_reverse for objects.
+unittest {
+    JSON obj = JSON.obj();
+
+    obj["a"] = 347;
+    obj["b"] = true;
+    obj["c"] = "beepbeep";
+    obj["d"] = null;
+
+    int count = 0;
+
+    foreach_reverse(string key, val; obj) {
+        final switch (key) {
+        case "a":
+            assert(cast(int) val == 347);
+        break;
+        case "b":
+            assert(cast(bool) val == true);
+        break;
+        case "c":
+            assert(cast(string) val == "beepbeep");
+        break;
+        case "d":
+            assert(val.isNull);
+        break;
+        }
+
+        ++count;
+    }
+
+    assert(count == 4);
+}
+
+// Test key-value foreach_reverse for arrays.
+unittest {
+    JSON arr = JSON.arr();
+
+    arr ~= 347;
+    arr ~= true;
+    arr ~= "beepbeep";
+    arr ~= null;
+
+    int count = 3;
+
+    foreach_reverse(string key, val; arr) {
+        assert(to!string(count--) == key);
+
+        final switch (key) {
+        case "0":
+            assert(cast(int) val == 347);
+        break;
+        case "1":
+            assert(cast(bool) val == true);
+        break;
+        case "2":
+            assert(cast(string) val == "beepbeep");
+        break;
+        case "3":
+            assert(val.isNull);
+        break;
+        }
+    }
+}
+
+// Test that index-value foreach_reverse for objects causes an exception.
+unittest {
+    JSON obj = JSON.obj();
+
+    bool failed = false;
+
+    try {
+        foreach_reverse(size_t index, val; obj) {}
+    } catch (Exception ex) {
+        failed = true;
+    }
+
+    assert(failed, "foreach_reverse (size_t index, val) did not throw "
+    ~ "for an object!");
+}
+
+// TODO: This caused a RangeViolation.
+// obj["a"] ~= 347;
+
+// Test convertJSON with JSON itself.
+unittest {
+    JSON j;
+
+    JSON x = convertJSON(j);
+}
+
+// Test convertJSON with primitives.
+unittest {
+    JSON a = convertJSON(3);
+    JSON b = convertJSON("bee");
+    JSON c = convertJSON(null);
+    JSON d = convertJSON(4.5);
+
+    assert(cast(int) a == 3);
+    assert(cast(string) b == "bee");
+    assert(c.isNull);
+    assert(cast(real) d == 4.5);
+}
+
+// Test convertJSON with an array literal.
+unittest {
+    JSON j = convertJSON([
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 9]
+    ]);
+
+    assert(j.length == 3);
+    assert(j[0].length == 3);
+    assert(cast(int) j[0][0] == 1);
+    assert(cast(int) j[0][1] == 2);
+    assert(cast(int) j[0][2] == 3);
+    assert(j[1].length == 3);
+    assert(cast(int) j[1][0] == 4);
+    assert(cast(int) j[1][1] == 5);
+    assert(cast(int) j[1][2] == 6);
+    assert(j[2].length == 3);
+    assert(cast(int) j[2][0] == 7);
+    assert(cast(int) j[2][1] == 8);
+    assert(cast(int) j[2][2] == 9);
+}
+
+// Test convertJSON with an object literal.
+unittest {
+    JSON j = convertJSON([
+        "a": [1, 2, 3],
+        "b": [4, 5, 6],
+        "c": [7, 8, 9]
+    ]);
+
+    assert(j.length == 3);
+    assert("a" in j && j["a"].length == 3);
+    assert(cast(int) j["a"][0] == 1);
+    assert(cast(int) j["a"][1] == 2);
+    assert(cast(int) j["a"][2] == 3);
+    assert("b" in j && j["b"].length == 3);
+    assert(cast(int) j["b"][0] == 4);
+    assert(cast(int) j["b"][1] == 5);
+    assert(cast(int) j["b"][2] == 6);
+    assert("c" in j && j["c"].length == 3);
+    assert(cast(int) j["c"][0] == 7);
+    assert(cast(int) j["c"][1] == 8);
+    assert(cast(int) j["c"][2] == 9);
+}
+
+// Test convertJSON with something invalid
+unittest {
+    static if(__traits(compiles, convertJSON([1 : [1, 2, 3]]))) {
+        assert(false);
+    }
+}
+
+// Test various kinds of output from toJSON with JSON types.
+unittest {
+    assert(toJSON(JSON("bla\\")) == `"bla\\"`);
+    assert(toJSON(JSON(4.7)) == "4.7");
+    assert(toJSON(JSON(12)) == "12");
+
+    JSON j0 = convertJSON([
+        "abc\"", "def", "djw\nw"
+    ]);
+
+    assert(toJSON(j0) == `["abc\"","def","djw\nw"]`);
+
+    JSON j1 = convertJSON([
+        "abc\"": 1234,
+        "def": 5,
+        "djw\nw": 1337
+    ]);
+
+    assert(toJSON(j1) == `{"abc\"":1234,"def":5,"djw\nw":1337}`);
+
+    JSON j2 = convertJSON([
+        "abc\"": ["bla", "bla", "bla"],
+        "def": [],
+        "djw\nw": ["beep", "boop"]
+    ]);
+
+    assert(toJSON(j2) == `{"abc\"":["bla","bla","bla"],`
+        ~ `"def":[],"djw\nw":["beep","boop"]}`);
+}
