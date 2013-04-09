@@ -23,6 +23,36 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+/**
+
+This module defines JSON types, reading, and writing.
+
+toJSON() will convert JSON types to strings.
+parseJSON() will convert strings to JSON types.
+
+There is one basic JSON type 'JSON', which has the following properties.
+
+* JSON can be initialised from arrays/maps of JSON, numbers, and strings.
+* JSON types can be casted back to arrays/maps, numbers, and strings.
+* JSON types can be assigned to with null.
+* The type stored can be checked with .is* or with .type
+* casting JSON types to bool never fails, so if statements always work.
+* cast(bool) is false for empty strings, arrays, and objects.
+* cast(bool) is true for non-empty strings, arrays, and objects.
+* When the JSON type is an array or object, .length can be read.
+* When the JSON type is an array, .length can be written to.
+* When the JSON type is an array ~ operations can be used on it.
+* When the JSON type is an object, the 'in' operator can be used.
+* When the JSON type is an array or object, [] operators can be used.
+* When the JSON type is an array or object, foreach loops can be used.
+* foreach with keys can be used with (string key, value)
+* foreach with indices can be used with (size_t index, value)
+* foreach for JSON never fails, just never iterates.
+
+*/
+
+module json;
+
 import std.conv;
 import std.exception;
 import std.stdio;
@@ -30,18 +60,27 @@ import std.traits;
 import std.range;
 import std.uni;
 
+/**
+ * Determine if a type can represent a JSON primitive type.
+ */
 template isJSONPrimitive(T) {
     enum isJSONPrimitive = __traits(isArithmetic, T)
         || is(T == typeof(null))
         || is(T == string);
 }
 
+/**
+ * Determine if a type can represent a JSON array.
+ */
 template isJSONArray(T) {
     enum isJSONArray = !isJSONPrimitive!T && isArray!T && (
            isJSONPrimitive!(ElementType!T)
         || isJSON!(ElementType!T));
 }
 
+/**
+ * Determine if a type can represent a JSON object.
+ */
 template isJSONObject(T) {
     static if(__traits(isAssociativeArray, T)) {
         enum isJSONObject = is(KeyType!T == string) && isJSON!(ValueType!T);
@@ -50,6 +89,11 @@ template isJSONObject(T) {
     }
 }
 
+/**
+ * Determine if a type can represent any JSON value.
+ *
+ * The special JSON type is included here.
+ */
 template isJSON(T) {
     immutable bool isJSON = is(T == JSON) || isJSONPrimitive!T
         || isJSONArray!T || isJSONObject!T;
@@ -67,6 +111,9 @@ enum JSON_TYPE : byte
     ARRAY
 }
 
+/**
+ * A union representation of any JSON value.
+ */
 struct JSON {
 public:
     static @safe pure nothrow JSON arr() {
@@ -481,6 +528,11 @@ public:
     }
 }
 
+/**
+ * Given a value attempt to convert that value into a JSON value.
+ *
+ * This function can be useful for initialising a JSON value from a literal.
+ */
 JSON convertJSON(T)(T object) {
     static if (is(T == JSON)) {
         // No conversion neeeded.
@@ -510,6 +562,11 @@ JSON convertJSON(T)(T object) {
     }
 }
 
+/**
+ * Given a string to write to, write the given string as a valid JSON string.
+ *
+ * Control characters found in the string will be either escaped or skipped.
+ */
 private void writeJSONString(ref string result, string str) {
     result ~= '"';
 
@@ -550,6 +607,9 @@ private void writeJSONString(ref string result, string str) {
     result ~= '"';
 }
 
+/**
+ * Given a string to write to, write the JSON array to the string.
+ */
 private void writeJSONArray(ref string result, in JSON[] array) {
     result ~= '[';
 
@@ -564,6 +624,9 @@ private void writeJSONArray(ref string result, in JSON[] array) {
     result ~= ']';
 }
 
+/**
+ * Given a string to write to, write the JSON object to the string.
+ */
 private void writeJSONObject(ref string result, in JSON[string] object) {
     result ~= '{';
 
@@ -584,6 +647,9 @@ private void writeJSONObject(ref string result, in JSON[string] object) {
     result ~= '}';
 }
 
+/**
+ * Given a string to write to, write the JSON value to the string.
+ */
 private void writeJSON(ref string result, in JSON json) {
     with(JSON_TYPE) final switch (json.type) {
     case NULL:
@@ -613,6 +679,9 @@ private void writeJSON(ref string result, in JSON json) {
     }
 }
 
+/**
+ * Given a JSON value, create a string representing the JSON value.
+ */
 string toJSON(in JSON json) {
     string result;
 
@@ -624,6 +693,7 @@ string toJSON(in JSON json) {
 // TODO: Read JSON.
 // TODO: immutable JSON?
 // TODO: opEquals.
+// TODO: This caused a RangeViolation: obj["a"] ~= 347;
 
 // Test the templates.
 unittest {
@@ -2010,9 +2080,6 @@ unittest {
     assert(failed, "foreach_reverse (size_t index, val) did not throw "
     ~ "for an object!");
 }
-
-// TODO: This caused a RangeViolation.
-// obj["a"] ~= 347;
 
 // Test convertJSON with JSON itself.
 unittest {
