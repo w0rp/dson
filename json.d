@@ -58,7 +58,10 @@ import std.exception;
 import std.stdio;
 import std.traits;
 import std.range;
+import std.array;
+import std.string;
 import std.uni;
+import std.utf : toUTF8;
 
 /**
  * Determine if a type can represent a JSON primitive type.
@@ -373,7 +376,7 @@ public:
     }
 
     @safe pure
-    JSON opBinary(string op, T)(T val) if(op == "~") {
+    JSON opBinary(string op : "~", T)(T val) {
         static if(is(T == JSON)) {
             // We can avoid a copy for JSON types.
             return JSON(innerArray ~ val);
@@ -383,7 +386,7 @@ public:
     }
 
     @safe pure
-    void opOpAssign(string op, T)(T val) if(op == "~") {
+    void opOpAssign(string op : "~", T)(T val) {
         static if(is(T == JSON)) {
             // We can avoid a copy for JSON types.
             innerArray ~= val;
@@ -408,7 +411,7 @@ public:
         innerObject[key] = value;
     }
 
-    pure JSON* opBinaryRight(string op)(string key) if(op == "in") {
+    pure JSON* opBinaryRight(string op : "in")(string key) {
         return key in innerObject;
     }
 
@@ -562,12 +565,14 @@ JSON convertJSON(T)(T object) {
     }
 }
 
+private alias Appender!string AS;
+
 /**
  * Given a string to write to, write the given string as a valid JSON string.
  *
  * Control characters found in the string will be either escaped or skipped.
  */
-private void writeJSONString(ref string result, string str) {
+private void writeJSONString(ref AS result, string str) {
     result ~= '"';
 
     foreach(dchar c; str) {
@@ -597,6 +602,7 @@ private void writeJSONString(ref string result, string str) {
             result ~= `\t`;
         break;
         default:
+            // TODO: Write escapes?
             // We'll just skip control characters.
             if (!isControl(c)) {
                 result ~= c;
@@ -610,7 +616,7 @@ private void writeJSONString(ref string result, string str) {
 /**
  * Given a string to write to, write the JSON array to the string.
  */
-private void writeJSONArray(ref string result, in JSON[] array) {
+private void writeJSONArray(ref AS result, in JSON[] array) {
     result ~= '[';
 
     for (size_t i = 0; i < array.length; ++i) {
@@ -627,7 +633,7 @@ private void writeJSONArray(ref string result, in JSON[] array) {
 /**
  * Given a string to write to, write the JSON object to the string.
  */
-private void writeJSONObject(ref string result, in JSON[string] object) {
+private void writeJSONObject(ref AS result, in JSON[string] object) {
     result ~= '{';
 
     bool first = true;
@@ -650,7 +656,7 @@ private void writeJSONObject(ref string result, in JSON[string] object) {
 /**
  * Given a string to write to, write the JSON value to the string.
  */
-private void writeJSON(ref string result, in JSON json) {
+private void writeJSON(ref AS result, in JSON json) {
     with(JSON_TYPE) final switch (json.type) {
     case NULL:
         result ~= "null";
@@ -683,14 +689,352 @@ private void writeJSON(ref string result, in JSON json) {
  * Given a JSON value, create a string representing the JSON value.
  */
 string toJSON(in JSON json) {
-    string result;
+    auto result = appender!string();
 
     writeJSON(result, json);
 
-    return result;
+    return result.data();
 }
 
-// TODO: Read JSON.
+class JSONParseException : Exception {
+    public const long line;
+    public const long col;
+
+    this(string reason, long line, long col) {
+        this.line = line;
+        this.col = col;
+
+        super(reason ~ " at line " ~ to!string(line)
+            ~ " column " ~ to!string(col) ~ "!");
+    }
+}
+
+// TODO: Advance line number.
+// TODO: Exception with line and column numbers embedded in it.
+private struct JSONReader {
+    string jsonString;
+    long line;
+    long col;
+
+    this(string jsonString) {
+        this.jsonString = jsonString;
+    }
+
+    void complain(string reason) {
+        throw new JSONParseException(reason, line, col);
+    }
+
+    void popFront() {
+        if (empty()) {
+            complain("Unexpected end of input");
+        }
+
+        ++col;
+
+        jsonString.popFront();
+    }
+
+    dchar front() {
+        if (empty()) {
+            complain("Unexpected end of input");
+        }
+
+        return jsonString.front();
+    }
+
+    bool empty() {
+        return jsonString.empty();
+    }
+
+    dchar moveFront() {
+        dchar c = front();
+        popFront();
+
+        return c;
+    }
+
+    void skipWhitespace() {
+        while (!empty() && isWhite(front())) {
+            popFront();
+        }
+    }
+
+    string parseString() {
+        auto result = appender!string();
+
+        if (moveFront() != '"') {
+            complain("Expected \"");
+        }
+
+        loop: while (true) {
+            auto c = moveFront();
+
+            switch (c) {
+            case '"':
+                // End of the string.
+                break loop;
+            case '\\':
+                switch (moveFront()) {
+                case '"':
+                     result ~= '"';
+                break;
+                case '\\':
+                     result ~= '\\';
+                break;
+                case '/':
+                     result ~= '/';
+                break;
+                case 'b':
+                     result ~= '\b';
+                break;
+                case 'f':
+                     result ~= '\f';
+                break;
+                case 'n':
+                     result ~= '\n';
+                break;
+                case 'r':
+                     result ~= '\r';
+                break;
+                case 't':
+                     result ~= '\t';
+                break;
+                case 'u':
+                    dchar val = 0;
+
+                    foreach_reverse(i; 0 .. 4) {
+                        dchar adjust;
+
+                        switch (front()) {
+                        case '0': .. case '9':
+                            adjust = '0';
+                        break;
+                        case 'a': .. case 'f':
+                            adjust = 'a' - 10;
+                        break;
+                        case 'A': .. case 'F':
+                            adjust = 'A' + 10;
+                        break;
+                        default:
+                            complain("Expected a hex character");
+                        break;
+                        }
+
+                        val += (moveFront() - adjust) << (4 * i);
+
+                    }
+
+                    char[4] buf;
+
+                    result ~= toUTF8(buf, val);
+                break;
+                default:
+                    complain("Invalid escape character");
+                break;
+                }
+            break;
+            default:
+                // We'll just skip control characters.
+                if (!isControl(c)) {
+                    result ~= c;
+                }
+            break;
+            }
+        }
+
+        return result.data();
+    }
+
+    JSON parseNumber() {
+        enum byte SIGNED = 2;
+        enum byte REAL = 4;
+
+        byte type;
+        auto result = appender!string();
+
+        void parseDigits() {
+            while (!empty()) {
+                switch(front()) {
+                case '0': .. case '9':
+                    result ~= moveFront();
+                    break;
+                default:
+                    return;
+                }
+            }
+        }
+
+        if (front() == '-') {
+            type |= SIGNED;
+            result ~= moveFront();
+        }
+
+        switch(front()) {
+        case '0':
+            result ~= moveFront();
+        break;
+        case '1': .. case '9':
+            parseDigits();
+        break;
+        default:
+            complain("Invalid input");
+        break;
+        }
+
+        if (!empty() && front() == '.') {
+            type |= REAL;
+            result ~= moveFront();
+
+            parseDigits();
+        }
+
+        if (!empty() && (front() == 'e' || front() == 'E')) {
+            type |= REAL;
+            result ~= moveFront();
+
+            if(front() == '+' || front() == '-') {
+                result ~= moveFront();
+            }
+
+            parseDigits();
+        }
+
+        string str = result.data();
+
+        if (type & REAL) {
+            return JSON(parse!real(str));
+        }
+
+        if (type & SIGNED) {
+            return JSON(parse!long(str));
+        }
+
+        return JSON(parse!ulong(str));
+    }
+
+    JSON[] parseArray() {
+        JSON[] arr;
+
+        if (moveFront() != '[') {
+            complain("Expected [");
+        }
+
+        while (true) {
+            skipWhitespace();
+
+            arr ~= parseValue();
+
+            skipWhitespace();
+
+            if (front() == ']') {
+                // We hit the end of the array
+                popFront();
+                break;
+            }
+
+            if (moveFront() != ',') {
+                complain("Expected ]");
+            }
+        }
+
+        return arr;
+    }
+
+    JSON[string] parseObject() {
+        JSON[string] obj;
+
+        if (moveFront() != '{') {
+            complain("Expected {");
+        }
+
+        while (true) {
+            skipWhitespace();
+
+            string key = parseString();
+
+            skipWhitespace();
+
+            if (moveFront() != ':') {
+                complain("Expected :");
+            }
+
+            skipWhitespace();
+
+            obj[key] = parseValue();
+
+            skipWhitespace();
+
+            if (front() == '}') {
+                // We hit the end of the object.
+                popFront();
+                break;
+            }
+
+            if (moveFront() != ',') {
+                complain("Expected }");
+            }
+        }
+
+        return obj;
+    }
+
+    void parseChars(in string matching) {
+        foreach(c; matching) {
+            if (moveFront() != c) {
+                complain("Invalid input");
+            }
+        }
+    }
+
+    JSON parseValue() {
+        switch (front()) {
+        case 't':
+            parseChars("true");
+
+            return JSON(true);
+        case 'f':
+            parseChars("false");
+
+            return JSON(false);
+        case 'n':
+            parseChars("null");
+
+            return JSON(null);
+        case '{':
+            return JSON(parseObject());
+        break;
+        case '[':
+            return JSON(parseArray());
+        break;
+        case '"':
+            return JSON(parseString());
+        case '-': case '0': .. case '9':
+            return parseNumber();
+        default:
+            complain("Invalid input");
+            assert(0);
+        }
+    }
+
+    JSON parseJSON() {
+        skipWhitespace();
+
+        JSON val = parseValue();
+
+        skipWhitespace();
+
+        if (!empty()) {
+            complain("Trailing character found");
+        }
+
+        return val;
+    }
+}
+
+JSON parseJSON(string jsonString) {
+    return JSONReader(jsonString).parseJSON();
+}
+
 // TODO: immutable JSON?
 // TODO: opEquals.
 // TODO: This caused a RangeViolation: obj["a"] ~= 347;
@@ -2182,4 +2526,34 @@ unittest {
 
     assert(toJSON(j2) == `{"abc\"":["bla","bla","bla"],`
         ~ `"def":[],"djw\nw":["beep","boop"]}`);
+}
+
+// Test parseJSON for keywords
+unittest {
+    assert(parseJSON(`null`).isNull);
+    assert(parseJSON(`true`).type == JSON_TYPE.BOOL);
+    assert(parseJSON(`true`));
+    assert(parseJSON(`false`).type == JSON_TYPE.BOOL);
+    assert(!parseJSON(`false`));
+}
+
+// Test parseJSON for various string inputs
+unittest {
+    assert(cast(string) parseJSON(`"foo"`) == "foo");
+    assert(cast(string) parseJSON("\r\n  \t\"foo\" \t \n") == "foo");
+    assert(cast(string) parseJSON(`"\r\n\"\t\f\b\/"`) == "\r\n\"\t\f\b/");
+    assert(cast(string) parseJSON(`"\u0347"`) == "\u0347");
+    assert(cast(string) parseJSON(`"\u7430"`) == "\u7430");
+}
+
+// Test parseJSON for various number inputs
+unittest {
+    assert(cast(int) parseJSON(`123`) == 123);
+    assert(cast(int) parseJSON(`-340`) == -340);
+    assert(cast(real) parseJSON(`9.53`) == 9.53);
+    assert(cast(uint) parseJSON(`57e2`) == 5_700);
+    assert(cast(int) parseJSON(`-123E3`) == -123_000);
+    assert(cast(int) parseJSON(`-123E+3`) == -123_000);
+    assert(cast(real) parseJSON(`-123E-3`) == -123e-3);
+    assert(cast(int) parseJSON(`-0.`) == 0);
 }
