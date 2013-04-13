@@ -54,14 +54,17 @@ There is one basic JSON type 'JSON', which has the following properties.
 module json;
 
 import std.conv;
-import std.exception;
-import std.stdio;
 import std.traits;
 import std.range;
 import std.array;
 import std.string;
 import std.uni;
 import std.utf : toUTF8;
+
+version(unittest) {
+    import std.stdio;
+    import std.exception;
+}
 
 /**
  * Determine if a type can represent a JSON primitive type.
@@ -565,6 +568,31 @@ JSON convertJSON(T)(T object) {
     }
 }
 
+class JSONException : Exception {
+    this(string msg) {
+        super(msg);
+    }
+}
+
+class JSONWriteException : JSONException {
+    this(string msg) {
+        super(msg);
+    }
+}
+
+class JSONParseException : JSONException {
+    public const long line;
+    public const long col;
+
+    this(string reason, long line, long col) {
+        this.line = line;
+        this.col = col;
+
+        super(reason ~ " at line " ~ to!string(line)
+            ~ " column " ~ to!string(col) ~ "!");
+    }
+}
+
 private alias Appender!string AS;
 
 /**
@@ -602,10 +630,15 @@ private void writeJSONString(ref AS result, string str) {
             result ~= `\t`;
         break;
         default:
-            // TODO: Write escapes?
             // We'll just skip control characters.
             if (!isControl(c)) {
                 result ~= c;
+            } else {
+                // We really must complain here. This is because control
+                // character, the most obvious of which being null, can
+                // break other readers in terrible ways.
+                throw new JSONWriteException("Invalid control character "
+                    ~ "found in string!");
             }
         }
     }
@@ -685,6 +718,9 @@ private void writeJSON(ref AS result, in JSON json) {
     }
 }
 
+// TODO: Write to file.
+// TODO: Pretty printing.
+
 /**
  * Given a JSON value, create a string representing the JSON value.
  */
@@ -696,25 +732,10 @@ string toJSON(in JSON json) {
     return result.data();
 }
 
-class JSONParseException : Exception {
-    public const long line;
-    public const long col;
-
-    this(string reason, long line, long col) {
-        this.line = line;
-        this.col = col;
-
-        super(reason ~ " at line " ~ to!string(line)
-            ~ " column " ~ to!string(col) ~ "!");
-    }
-}
-
-// TODO: Advance line number.
-// TODO: Exception with line and column numbers embedded in it.
 private struct JSONReader {
     string jsonString;
-    long line;
-    long col;
+    long line = 1;
+    long col = 1;
 
     this(string jsonString) {
         this.jsonString = jsonString;
@@ -755,7 +776,18 @@ private struct JSONReader {
 
     void skipWhitespace() {
         while (!empty() && isWhite(front())) {
-            popFront();
+            // Accept \n, \r, or \r\n for newlines.
+            // Skip every other whitespace character.
+            switch (moveFront()) {
+            case '\r':
+                if (!empty() && front() == '\n') {
+                    popFront();
+                }
+            case '\n':
+                ++line;
+                col = 1;
+            default:
+            }
         }
     }
 
@@ -813,7 +845,7 @@ private struct JSONReader {
                             adjust = 'a' - 10;
                         break;
                         case 'A': .. case 'F':
-                            adjust = 'A' + 10;
+                            adjust = 'A' - 10;
                         break;
                         default:
                             complain("Expected a hex character");
@@ -837,6 +869,7 @@ private struct JSONReader {
                 // We'll just skip control characters.
                 if (!isControl(c)) {
                     result ~= c;
+                } else {
                 }
             break;
             }
@@ -2544,6 +2577,8 @@ unittest {
     assert(cast(string) parseJSON(`"\r\n\"\t\f\b\/"`) == "\r\n\"\t\f\b/");
     assert(cast(string) parseJSON(`"\u0347"`) == "\u0347");
     assert(cast(string) parseJSON(`"\u7430"`) == "\u7430");
+    assert(cast(string) parseJSON(`"\uabcd"`) == "\uabcd");
+    assert(cast(string) parseJSON(`"\uABCD"`) == "\uABCD");
 }
 
 // Test parseJSON for various number inputs
@@ -2556,4 +2591,123 @@ unittest {
     assert(cast(int) parseJSON(`-123E+3`) == -123_000);
     assert(cast(real) parseJSON(`-123E-3`) == -123e-3);
     assert(cast(int) parseJSON(`-0.`) == 0);
+}
+
+// Test parseJSON for various arrays.
+unittest {
+    JSON arr1 = parseJSON(`  [1, 2, 3, 4, 5]` ~ "\n\t\r");
+
+    assert(arr1.isArr);
+    assert(arr1.length == 5);
+    assert(cast(int) arr1[0] == 1);
+    assert(cast(int) arr1[1] == 2);
+    assert(cast(int) arr1[2] == 3);
+    assert(cast(int) arr1[3] == 4);
+    assert(cast(int) arr1[4] == 5);
+
+    JSON arr2 = parseJSON("  [\"bla bla\",\n true, \r\n null, false]\n\t\r");
+
+    assert(arr2.isArr);
+    assert(arr2.length == 4);
+    assert(cast(string) arr2[0] == "bla bla");
+    assert(cast(bool) arr2[1] == true);
+    assert(arr2[2].isNull);
+    assert(cast(bool) arr2[3] == false);
+}
+
+// Test parseJSON for various objects.
+unittest {
+    JSON obj1 = parseJSON(`  {"a":1, "b" :  2, "c" : 3, "d" : 4}` ~ "\n\t\r");
+
+    assert(obj1.isObj);
+    assert(obj1.length == 4);
+    assert(cast(int) obj1["a"] == 1);
+    assert(cast(int) obj1["b"] == 2);
+    assert(cast(int) obj1["c"] == 3);
+    assert(cast(int) obj1["d"] == 4);
+
+    JSON obj2 = parseJSON(`{
+        "foo" : "bla de bla",
+        "john" : "something else",
+        "bar" : null,
+        "jane" : 4.7
+    }`);
+
+    assert(obj2.isObj);
+    assert(obj2.length == 4);
+    assert(cast(string) obj2["foo"] == "bla de bla");
+    assert(cast(string) obj2["john"] == "something else");
+    assert(obj2["bar"].isNull);
+    assert(cast(real) obj2["jane"] == 4.7);
+}
+
+// Test complicated parseJSON examples
+unittest {
+    JSON obj = parseJSON(`{
+        "array" : [1, 2, 3, 4, 5],
+        "matrix" : [
+            [ 1,  2,  3,  4,  5],
+            [ 6,  7,  8,  9, 10],
+            [11, 12, 13, 14, 15]
+        ],
+        "obj" : {
+            "this" : 1,
+            "is": 2,
+            "enough": true
+        }
+    }`);
+
+    assert(obj.isObj);
+    assert(obj.length == 3);
+    assert("array" in obj);
+
+    JSON array = obj["array"];
+
+    assert(array.isArr);
+    assert(array.length == 5);
+    assert(cast(int) array[0] == 1);
+    assert(cast(int) array[1] == 2);
+    assert(cast(int) array[2] == 3);
+    assert(cast(int) array[3] == 4);
+    assert(cast(int) array[4] == 5);
+
+    assert("matrix" in obj);
+
+    JSON matrix = obj["matrix"];
+
+    assert(matrix.isArr);
+    assert(matrix.length == 3);
+
+    assert(matrix[0].isArr);
+    assert(matrix[0].length == 5);
+    assert(cast(int) matrix[0][0] == 1);
+    assert(cast(int) matrix[0][1] == 2);
+    assert(cast(int) matrix[0][2] == 3);
+    assert(cast(int) matrix[0][3] == 4);
+    assert(cast(int) matrix[0][4] == 5);
+    assert(matrix[1].isArr);
+    assert(matrix[1].length == 5);
+    assert(cast(int) matrix[1][0] == 6);
+    assert(cast(int) matrix[1][1] == 7);
+    assert(cast(int) matrix[1][2] == 8);
+    assert(cast(int) matrix[1][3] == 9);
+    assert(cast(int) matrix[1][4] == 10);
+    assert(matrix[2].isArr);
+    assert(matrix[2].length == 5);
+    assert(cast(int) matrix[2][0] == 11);
+    assert(cast(int) matrix[2][1] == 12);
+    assert(cast(int) matrix[2][2] == 13);
+    assert(cast(int) matrix[2][3] == 14);
+    assert(cast(int) matrix[2][4] == 15);
+
+    assert("obj" in obj);
+
+    JSON subObj = obj["obj"];
+
+    assert(subObj.isObj);
+    assert(subObj.length == 3);
+
+    assert(cast(int) subObj["this"] == 1);
+    assert(cast(int) subObj["is"] == 2);
+    assert(cast(bool) subObj["enough"] == true);
 }
