@@ -30,6 +30,7 @@ This module defines JSON types, reading, and writing.
 parseJSON() will convert strings to JSON types.
 toJSON(json) will convert JSON types to strings.
 writeJSON(outputRange, json) will write JSON to an output range.
+toJSON!n and writeJSON!n will write JSON, indented by 'n' spaces.
 
 There is one basic JSON type 'JSON', which has the following properties.
 
@@ -668,6 +669,14 @@ class JSONParseException : JSONException {
     }
 }
 
+private void newline(T)(T outputRange) {
+    outputRange.put('\n');
+}
+
+private void indent(T)(T outputRange, int spaces) {
+    copy(take(repeat(' '), spaces), outputRange);
+}
+
 /**
  * Given a string to write to, write the given string as a valid JSON string.
  *
@@ -722,7 +731,8 @@ private void writeJSONString(T)(T outRange, string str) {
 /**
  * Given a string to write to, write the JSON array to the string.
  */
-private void writeJSONArray(T)(T outRange, in JSON[] array) {
+private void writeJSONArray(int spaces, T)
+(T outRange, in JSON[] array, int level) {
     outRange.put('[');
 
     for (size_t i = 0; i < array.length; ++i) {
@@ -730,7 +740,22 @@ private void writeJSONArray(T)(T outRange, in JSON[] array) {
             outRange.put(',');
         }
 
-        writeJSON(outRange, array[i]);
+        static if (spaces > 0) {
+            newline(outRange);
+            indent(outRange, spaces * (level + 1));
+        }
+
+        writePrettyJSON!spaces(outRange, array[i], level + 1);
+    }
+
+    static if (spaces > 0) {
+        if (array.length > 0) {
+            newline(outRange);
+
+            if (level > 0) {
+                indent(outRange, spaces * level);
+            }
+        }
     }
 
     outRange.put(']');
@@ -739,7 +764,8 @@ private void writeJSONArray(T)(T outRange, in JSON[] array) {
 /**
  * Given a string to write to, write the JSON object to the string.
  */
-private void writeJSONObject(T)(T outRange, in JSON[string] object) {
+private void writeJSONObject(int spaces, T)
+(T outRange, in JSON[string] object, int level) {
     outRange.put('{');
 
     bool first = true;
@@ -749,23 +775,43 @@ private void writeJSONObject(T)(T outRange, in JSON[string] object) {
             outRange.put(',');
         }
 
+        static if (spaces > 0) {
+            newline(outRange);
+            indent(outRange, spaces * (level + 1));
+        }
+
         writeJSONString(outRange, key);
 
         outRange.put(':');
 
-        writeJSON(outRange, val);
+        static if (spaces > 0) {
+            outRange.put(' ');
+        }
+
+        writePrettyJSON!spaces(outRange, val, level + 1);
 
         first = false;
+    }
+
+    static if (spaces > 0) {
+        if (!first) {
+            newline(outRange);
+
+            if (level > 0) {
+                indent(outRange, spaces * level);
+            }
+        }
     }
 
     outRange.put('}');
 }
 
+
 /**
  * Given a string to write to, write the JSON value to the string.
  */
-void writeJSON(T)(T outRange, in JSON json)
-if(isOutputRange!(T, dchar)) {
+private void writePrettyJSON (int spaces = 0, T)
+(T outRange, in JSON json, int level = 0) {
     with(JSON_TYPE) final switch (json.type) {
     case NULL:
         outRange.put("null");
@@ -786,28 +832,39 @@ if(isOutputRange!(T, dchar)) {
         writeJSONString(outRange, json._str);
     break;
     case ARRAY:
-        writeJSONArray(outRange, json._array);
+        writeJSONArray!spaces(outRange, json._array, level);
     break;
     case OBJECT:
-        writeJSONObject(outRange, json._object);
+        writeJSONObject!spaces(outRange, json._object, level);
     break;
     }
 }
 
-void writeJSON(T)(T file, in JSON json)
-if(!isOutputRange!(T, dchar)) {
-    writeJSON(file.lockingTextWriter, json);
+/**
+ * Given an output range to write to, write the JSON value to the range.
+ */
+void writeJSON(int spaces = 0, T) (T outRange, in JSON json)
+if(isOutputRange!(T, dchar)) {
+    static assert(spaces >= 0, "Negative number of spaces for writeJSON.");
+
+    writePrettyJSON!(spaces, T)(outRange, json);
 }
 
-// TODO: Pretty printing.
+/**
+ * Given a file to write to, write the JSON value to the file.
+ */
+void writeJSON(int spaces = 0, T)(T file, in JSON json)
+if(!isOutputRange!(T, dchar)) {
+    writeJSON!(spaces, T)(file.lockingTextWriter, json);
+}
 
 /**
  * Given a JSON value, create a string representing the JSON value.
  */
-string toJSON(in JSON json) {
+string toJSON(int spaces = 0)(in JSON json) {
     auto result = appender!string();
 
-    writeJSON(result, json);
+    writeJSON!(spaces)(result, json);
 
     return result.data();
 }
@@ -1035,6 +1092,11 @@ private struct JSONReader {
         while (true) {
             skipWhitespace();
 
+            if (front() == ']') {
+                popFront();
+                break;
+            }
+
             arr ~= parseValue();
 
             skipWhitespace();
@@ -1062,6 +1124,11 @@ private struct JSONReader {
 
         while (true) {
             skipWhitespace();
+
+            if (front() == '}') {
+                popFront();
+                break;
+            }
 
             string key = parseString();
 
@@ -2775,6 +2842,14 @@ unittest {
     assert(cast(string) obj2["john"] == "something else");
     assert(obj2["bar"].isNull);
     assert(cast(real) obj2["jane"] == 4.7);
+}
+
+// Test parseJSON on empty arrays and objects
+unittest {
+    assert(parseJSON(`[]`).length == 0);
+    assert(parseJSON(`{}`).length == 0);
+    assert(parseJSON(" [\t \n] ").length == 0);
+    assert(parseJSON(" {\r\n } ").length == 0);
 }
 
 // Test complicated parseJSON examples
