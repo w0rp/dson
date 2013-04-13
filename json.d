@@ -79,9 +79,7 @@ template isJSONPrimitive(T) {
  * Determine if a type can represent a JSON array.
  */
 template isJSONArray(T) {
-    enum isJSONArray = !isJSONPrimitive!T && isArray!T && (
-           isJSONPrimitive!(ElementType!T)
-        || isJSON!(ElementType!T));
+    enum isJSONArray = isArray!T && isJSON!(ElementType!T);
 }
 
 /**
@@ -375,6 +373,8 @@ public:
             }
 
             return _object;
+        } else {
+            static assert(false, "Unsupported cast from JSON!");
         }
     }
 
@@ -531,6 +531,78 @@ public:
         }
 
         return result;
+    }
+
+    nothrow bool opEquals(T)(inout(T) other) inout
+    if(!is(T == typeof(null))) {
+        static if(is(T == JSON)) {
+            if (_type != other._type) {
+                return false;
+            }
+
+            with(JSON_TYPE) final switch (_type) {
+            case BOOL:
+                return _boolean == other._boolean;
+            case UINT:
+                return _uinteger == other._uinteger;
+            case INT:
+                return _integer == other._integer;
+            case FLOAT:
+                return _floating == other._floating;
+            case STRING:
+                return _str == other._str;
+            case ARRAY:
+                return _array == other._array;
+            case OBJECT:
+                return _object == other._object;
+            case NULL:
+                // The types match, so this is true.
+                return true;
+            }
+        } else static if(is(T : string)) {
+            return _type == JSON_TYPE.STRING && _str == other;
+        } else static if(isJSONArray!T) {
+            if (_type != JSON_TYPE.ARRAY || _array.length != other.length) {
+                return false;
+            }
+
+            for (size_t i = 0; i < _array.length; ++i) {
+                if (_array[0] != other[0]) {
+                    return false;
+                }
+            }
+
+            return true;
+        } else static if(isJSONObject!T) {
+            if (_type != JSON_TYPE.OBJECT || _object.length != other.length) {
+                return false;
+            }
+
+            foreach(key, val; _object) {
+                auto other_val_p = key in other;
+
+                if (!other_val_p || val != *other_val_p) {
+                    return false;
+                }
+            }
+
+            return true;
+        } else static if(__traits(isArithmetic, T)) {
+            with(JSON_TYPE) switch (_type) {
+            case BOOL:
+                return _boolean == other;
+            case UINT:
+                return _uinteger == other;
+            case INT:
+                return _integer == other;
+            case FLOAT:
+                return _floating == other;
+            default:
+                return false;
+            }
+        } else {
+            static assert(false, "No match for JSON opEquals!");
+        }
     }
 }
 
@@ -1069,7 +1141,6 @@ JSON parseJSON(string jsonString) {
 }
 
 // TODO: immutable JSON?
-// TODO: opEquals.
 // TODO: This caused a RangeViolation: obj["a"] ~= 347;
 
 // Test the templates.
@@ -1095,9 +1166,12 @@ unittest {
     assert(isJSONArray!(string[]));
     assert(isJSONArray!(int[]));
     assert(isJSONArray!(int[][]));
-    assert(!isJSONArray!(string));
+    assert(isJSONArray!(string));
     assert(isJSONArray!(string[][][]));
     assert(isJSONArray!(int[string][][]));
+    assert(!isJSONArray!int);
+    assert(!isJSONArray!bool);
+    assert(!isJSONArray!(typeof(null)));
 }
 
 unittest {
@@ -1633,6 +1707,15 @@ unittest {
     assertThrown(cast(JSON[string]) x);
 }
 
+// Test that casting to a class doesn't even compile
+unittest {
+    class Test() {}
+    JSON x;
+
+    static if(__traits(compiles, cast(Test) x)) {
+        assert(false);
+    }
+}
 
 // Test innerArray
 unittest {
@@ -2456,6 +2539,51 @@ unittest {
 
     assert(failed, "foreach_reverse (size_t index, val) did not throw "
     ~ "for an object!");
+}
+
+// Test various uses of opEquals
+unittest {
+    string str = "string";
+    JSON jstr = "string";
+
+    assert(str == jstr);
+    assert(jstr != [1, 2]);
+
+    int integer = 34343;
+    JSON jinteger = 34343;
+
+    assert(jinteger == integer);
+    assert(jinteger != [1, 2]);
+
+    float floating = 2.5;
+    JSON jfloating = 2.5;
+
+    assert(floating == jfloating);
+    assert(jfloating != "2.5");
+
+    JSON arr = JSON.arr();
+    arr.length = 3;
+
+    arr[0] = 123;
+    arr[1] = 456;
+    arr[2] = 789;
+
+    assert(arr == [123, 456, 789]);
+
+    JSON obj1 = JSON.obj();
+
+    obj1["a"] = "wat";
+    obj1["b"] = 1;
+    obj1["c"] = null;
+
+    JSON obj2 = JSON.obj();
+
+    obj2["a"] = "wat";
+    obj2["b"] = 1;
+    obj2["c"] = null;
+
+    assert(obj1 == obj2);
+    assert(obj1 != arr);
 }
 
 // Test convertJSON with JSON itself.
