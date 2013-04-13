@@ -204,24 +204,24 @@ public:
      * Returns: True if this JSON value contains a numeric type.
      */
     @safe pure nothrow @property bool isNum() const {
-    with(JSON_TYPE) switch(_type) {
-    case BOOL, UINT, INT, FLOAT:
-        return true;
-    default:
-        return false;
-    }
+        with(JSON_TYPE) switch(_type) {
+        case BOOL, UINT, INT, FLOAT:
+            return true;
+        default:
+            return false;
+        }
     }
 
     /**
      * Returns: true if the value is a string.
      */
     @safe pure nothrow @property bool isStr() const {
-    with(JSON_TYPE) switch(_type) {
-    case STRING:
-        return true;
-    default:
-        return false;
-    }
+        with(JSON_TYPE) switch(_type) {
+        case STRING:
+            return true;
+        default:
+            return false;
+        }
     }
 
     /**
@@ -276,7 +276,7 @@ public:
     @property size_t length() const {
         if (_type == JSON_TYPE.ARRAY) {
            return _array.length;
-        } if (_type == JSON_TYPE.OBJECT) {
+        } else if (_type == JSON_TYPE.OBJECT) {
            return _object.length;
         } else {
             throw new Exception("length called on non array or object type.");
@@ -296,24 +296,24 @@ public:
     }
 
     string toString() const {
-    with(JSON_TYPE) final switch (_type) {
-    case BOOL:
-        return _boolean ? "true" : "false";
-    case UINT:
-        return to!string(_uinteger);
-    case INT:
-        return to!string(_integer);
-    case FLOAT:
-        return to!string(_floating);
-    case STRING:
-        return _str;
-    case ARRAY:
-        return to!string(_array);
-    case OBJECT:
-        return to!string(_object);
-    case NULL:
-        return "null";
-    }
+        with(JSON_TYPE) final switch (_type) {
+        case BOOL:
+            return _boolean ? "true" : "false";
+        case UINT:
+            return to!string(_uinteger);
+        case INT:
+            return to!string(_integer);
+        case FLOAT:
+            return to!string(_floating);
+        case STRING:
+            return _str;
+        case ARRAY:
+            return to!string(_array);
+        case OBJECT:
+            return to!string(_object);
+        case NULL:
+            return "null";
+        }
     }
 
     // Casting to bool must never throw an exception.
