@@ -27,8 +27,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 This module defines JSON types, reading, and writing.
 
-toJSON() will convert JSON types to strings.
 parseJSON() will convert strings to JSON types.
+toJSON(json) will convert JSON types to strings.
+writeJSON(outputRange, json) will write JSON to an output range.
 
 There is one basic JSON type 'JSON', which has the following properties.
 
@@ -58,6 +59,7 @@ import std.conv;
 import std.traits;
 import std.range;
 import std.array;
+import std.algorithm;
 import std.string;
 import std.uni;
 import std.utf : toUTF8;
@@ -666,46 +668,44 @@ class JSONParseException : JSONException {
     }
 }
 
-private alias Appender!string AS;
-
 /**
  * Given a string to write to, write the given string as a valid JSON string.
  *
  * Control characters found in the string will be either escaped or skipped.
  */
-private void writeJSONString(ref AS result, string str) {
-    result ~= '"';
+private void writeJSONString(T)(T outRange, string str) {
+    outRange.put('"');
 
     foreach(dchar c; str) {
         switch (c) {
         case '"':
-            result ~= `\"`;
+            copy(`\"`, outRange);
         break;
         case '\\':
-            result ~= `\\`;
+            copy(`\\`, outRange);
         break;
         case '/':
-            result ~= `\/`;
+            copy(`\/`, outRange);
         break;
         case '\b':
-            result ~= `\b`;
+            copy(`\b`, outRange);
         break;
         case '\f':
-            result ~= `\f`;
+            copy(`\f`, outRange);
         break;
         case '\n':
-            result ~= `\n`;
+            copy(`\n`, outRange);
         break;
         case '\r':
-            result ~= `\r`;
+            copy(`\r`, outRange);
         break;
         case '\t':
-            result ~= `\t`;
+            copy(`\t`, outRange);
         break;
         default:
             // We'll just skip control characters.
             if (!isControl(c)) {
-                result ~= c;
+                outRange.put(c);
             } else {
                 // We really must complain here. This is because control
                 // character, the most obvious of which being null, can
@@ -716,82 +716,89 @@ private void writeJSONString(ref AS result, string str) {
         }
     }
 
-    result ~= '"';
+    outRange.put('"');
 }
 
 /**
  * Given a string to write to, write the JSON array to the string.
  */
-private void writeJSONArray(ref AS result, in JSON[] array) {
-    result ~= '[';
+private void writeJSONArray(T)(T outRange, in JSON[] array) {
+    outRange.put('[');
 
     for (size_t i = 0; i < array.length; ++i) {
         if (i != 0) {
-            result ~= ',';
+            outRange.put(',');
         }
 
-        writeJSON(result, array[i]);
+        writeJSON(outRange, array[i]);
     }
 
-    result ~= ']';
+    outRange.put(']');
 }
 
 /**
  * Given a string to write to, write the JSON object to the string.
  */
-private void writeJSONObject(ref AS result, in JSON[string] object) {
-    result ~= '{';
+private void writeJSONObject(T)(T outRange, in JSON[string] object) {
+    outRange.put('{');
 
     bool first = true;
 
     foreach(key, val; object) {
         if (!first) {
-            result ~= ',';
+            outRange.put(',');
         }
 
-        writeJSONString(result, key);
-        result ~= ':';
-        writeJSON(result, val);
+        writeJSONString(outRange, key);
+
+        outRange.put(':');
+
+        writeJSON(outRange, val);
 
         first = false;
     }
 
-    result ~= '}';
+    outRange.put('}');
 }
 
 /**
  * Given a string to write to, write the JSON value to the string.
  */
-private void writeJSON(ref AS result, in JSON json) {
+void writeJSON(T)(T outRange, in JSON json)
+if(isOutputRange!(T, dchar)) {
     with(JSON_TYPE) final switch (json.type) {
     case NULL:
-        result ~= "null";
+        outRange.put("null");
     break;
     case BOOL:
-        result ~= json._boolean ? "true" : "false";
+        outRange.put(json._boolean ? "true" : "false");
     break;
     case INT:
-        result ~= to!string(json._integer);
+        copy(to!string(json._integer), outRange);
     break;
     case UINT:
-        result ~= to!string(json._uinteger);
+        copy(to!string(json._uinteger), outRange);
     break;
     case FLOAT:
-        result ~= to!string(json._floating);
+        copy(to!string(json._floating), outRange);
     break;
     case STRING:
-        writeJSONString(result, json._str);
+        writeJSONString(outRange, json._str);
     break;
     case ARRAY:
-        writeJSONArray(result, json._array);
+        writeJSONArray(outRange, json._array);
     break;
     case OBJECT:
-        writeJSONObject(result, json._object);
+        writeJSONObject(outRange, json._object);
     break;
     }
 }
 
-// TODO: Write to file.
+void writeJSON(T)(T file, in JSON json)
+if(!isOutputRange!(T, dchar)) {
+    writeJSON(file.lockingTextWriter, json);
+}
+
 // TODO: Pretty printing.
 
 /**
