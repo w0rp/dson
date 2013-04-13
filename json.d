@@ -43,6 +43,7 @@ There is one basic JSON type 'JSON', which has the following properties.
 * When the JSON type is an array, .length can be written to.
 * When the JSON type is an array ~ operations can be used on it.
 * When the JSON type is an object, the 'in' operator can be used.
+* JSON types can be compared with other types with ==.
 * When the JSON type is an array or object, [] operators can be used.
 * When the JSON type is an array or object, foreach loops can be used.
 * foreach with keys can be used with (string key, value)
