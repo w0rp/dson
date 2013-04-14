@@ -27,7 +27,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 This module defines JSON types, reading, and writing.
 
-parseJSON() will convert strings to JSON types.
+parseJSON(inputRange) will convert input ranges (string...) to JSON types.
 toJSON(json) will convert JSON types to strings.
 writeJSON(outputRange, json) will write JSON to an output range.
 toJSON!n and writeJSON!n will write JSON, indented by 'n' spaces.
@@ -64,9 +64,9 @@ import std.algorithm;
 import std.string;
 import std.uni;
 import std.utf : toUTF8;
+import std.stdio;
 
 version(unittest) {
-    import std.stdio;
     import std.exception;
 }
 
@@ -853,9 +853,8 @@ if(isOutputRange!(T, dchar)) {
 /**
  * Given a file to write to, write the JSON value to the file.
  */
-void writeJSON(int spaces = 0, T)(T file, in JSON json)
-if(!isOutputRange!(T, dchar)) {
-    writeJSON!(spaces, T)(file.lockingTextWriter, json);
+void writeJSON(int spaces = 0)(File file, in JSON json) {
+    writeJSON!spaces(file.lockingTextWriter, json);
 }
 
 /**
@@ -1211,8 +1210,19 @@ private struct JSONReader(T) {
     }
 }
 
-JSON parseJSON(T)(T jsonRange) if(isInputRange!T) {
+JSON parseJSON(T)(T jsonRange)
+if(isInputRange!T && is(ElementType!T : dchar)) {
     return JSONReader!T(jsonRange).parseJSON();
+}
+
+JSON parseJSON(T)(T jsonRange)
+if(isInputRange!T && isInputRange!(ElementType!T)
+&& is(ElementType!(ElementType!T) : dchar)) {
+    return parseJSON(joiner(jsonRange));
+}
+
+JSON parseJSON(size_t chunkSize = 4096)(File file) {
+    return parseJSON(file.byChunk(chunkSize));
 }
 
 // TODO: immutable JSON?
