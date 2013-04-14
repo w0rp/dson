@@ -869,13 +869,13 @@ string toJSON(int spaces = 0)(in JSON json) {
     return result.data();
 }
 
-private struct JSONReader {
-    string jsonString;
+private struct JSONReader(T) {
+    T jsonRange;
     long line = 1;
     long col = 1;
 
-    this(string jsonString) {
-        this.jsonString = jsonString;
+    this(T jsonRange) {
+        this.jsonRange = jsonRange;
     }
 
     void complain(string reason) {
@@ -889,7 +889,7 @@ private struct JSONReader {
 
         ++col;
 
-        jsonString.popFront();
+        jsonRange.popFront();
     }
 
     dchar front() {
@@ -897,11 +897,11 @@ private struct JSONReader {
             complain("Unexpected end of input");
         }
 
-        return jsonString.front();
+        return jsonRange.front();
     }
 
     bool empty() {
-        return jsonString.empty();
+        return jsonRange.empty();
     }
 
     dchar moveFront() {
@@ -1211,8 +1211,8 @@ private struct JSONReader {
     }
 }
 
-JSON parseJSON(string jsonString) {
-    return JSONReader(jsonString).parseJSON();
+JSON parseJSON(T)(T jsonRange) if(isInputRange!T) {
+    return JSONReader!T(jsonRange).parseJSON();
 }
 
 // TODO: immutable JSON?
