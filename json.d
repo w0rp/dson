@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2013, w0rp <moebiuspersona@gmail.com>
+Copyright (c) 2013, w0rp <devw0rp@gmail.com>
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
