@@ -944,28 +944,28 @@ private struct JSONReader(T) {
             case '\\':
                 switch (moveFront()) {
                 case '"':
-                     result ~= '"';
+                     result.put('"');
                 break;
                 case '\\':
-                     result ~= '\\';
+                     result.put('\\');
                 break;
                 case '/':
-                     result ~= '/';
+                     result.put('/');
                 break;
                 case 'b':
-                     result ~= '\b';
+                     result.put('\b');
                 break;
                 case 'f':
-                     result ~= '\f';
+                     result.put('\f');
                 break;
                 case 'n':
-                     result ~= '\n';
+                     result.put('\n');
                 break;
                 case 'r':
-                     result ~= '\r';
+                     result.put('\r');
                 break;
                 case 't':
-                     result ~= '\t';
+                     result.put('\t');
                 break;
                 case 'u':
                     dchar val = 0;
@@ -994,7 +994,7 @@ private struct JSONReader(T) {
 
                     char[4] buf;
 
-                    result ~= toUTF8(buf, val);
+                    result.put(toUTF8(buf, val));
                 break;
                 default:
                     complain("Invalid escape character");
@@ -1004,7 +1004,7 @@ private struct JSONReader(T) {
             default:
                 // We'll just skip control characters.
                 if (!isControl(c)) {
-                    result ~= c;
+                    result.put(c);
                 } else {
                 }
             break;
@@ -1025,7 +1025,7 @@ private struct JSONReader(T) {
             while (!empty()) {
                 switch(front()) {
                 case '0': .. case '9':
-                    result ~= moveFront();
+                    result.put(moveFront());
                     break;
                 default:
                     return;
@@ -1035,12 +1035,12 @@ private struct JSONReader(T) {
 
         if (front() == '-') {
             type |= SIGNED;
-            result ~= moveFront();
+            result.put(moveFront());
         }
 
         switch(front()) {
         case '0':
-            result ~= moveFront();
+            result.put(moveFront());
         break;
         case '1': .. case '9':
             parseDigits();
@@ -1052,17 +1052,17 @@ private struct JSONReader(T) {
 
         if (!empty() && front() == '.') {
             type |= REAL;
-            result ~= moveFront();
+            result.put(moveFront());
 
             parseDigits();
         }
 
         if (!empty() && (front() == 'e' || front() == 'E')) {
             type |= REAL;
-            result ~= moveFront();
+            result.put(moveFront());
 
             if(front() == '+' || front() == '-') {
-                result ~= moveFront();
+                result.put(moveFront());
             }
 
             parseDigits();
