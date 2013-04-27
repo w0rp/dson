@@ -674,7 +674,7 @@ private void newline(T)(T outputRange) {
 }
 
 private void indent(T)(T outputRange, int spaces) {
-    copy(take(repeat(' '), spaces), outputRange);
+    repeat(' ').take(spaces).copy(outputRange);
 }
 
 /**
@@ -2931,4 +2931,22 @@ unittest {
     assert(cast(int) subObj["this"] == 1);
     assert(cast(int) subObj["is"] == 2);
     assert(cast(bool) subObj["enough"] == true);
+}
+
+// Test indented writing
+unittest {
+    JSON j = JSON.arr();
+
+    j ~= 3;
+    j ~= "hello";
+    j ~= 4.5;
+
+    string result = toJSON!4(j);
+
+    assert(result ==
+`[
+    3,
+    "hello",
+    4.5
+]`);
 }
