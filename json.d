@@ -392,14 +392,19 @@ public:
         }
     }
 
+    // Defining put makes this an output range.
     @safe pure
-    void opOpAssign(string op : "~", T)(T val) {
+    void put(T)(T val) {
         static if(is(T == JSON)) {
-            // We can avoid a copy for JSON types.
             innerArray ~= val;
         } else {
             innerArray ~= JSON(val);
         }
+    }
+
+    @safe pure
+    void opOpAssign(string op : "~", T)(T val) {
+        put(val);
     }
 
     @safe pure inout(JSON) opIndex(size_t index) inout {
