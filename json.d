@@ -848,7 +848,7 @@ private void writePrettyJSON (int spaces = 0, T)
 /**
  * Given an output range to write to, write the JSON value to the range.
  */
-void writeJSON(int spaces = 0, T) (T outRange, in JSON json)
+void writeJSON(int spaces = 0, T) (in JSON json, T outRange)
 if(isOutputRange!(T, dchar)) {
     static assert(spaces >= 0, "Negative number of spaces for writeJSON.");
 
@@ -858,8 +858,8 @@ if(isOutputRange!(T, dchar)) {
 /**
  * Given a file to write to, write the JSON value to the file.
  */
-void writeJSON(int spaces = 0)(File file, in JSON json) {
-    writeJSON!spaces(file.lockingTextWriter, json);
+void writeJSON(int spaces = 0)(in JSON json, File file) {
+    writeJSON!spaces(json, file.lockingTextWriter);
 }
 
 /**
@@ -868,7 +868,7 @@ void writeJSON(int spaces = 0)(File file, in JSON json) {
 string toJSON(int spaces = 0)(in JSON json) {
     auto result = appender!string();
 
-    writeJSON!(spaces)(result, json);
+    writeJSON!(spaces)(json, result);
 
     return result.data();
 }
