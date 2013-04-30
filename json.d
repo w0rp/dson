@@ -123,22 +123,6 @@ enum JSON_TYPE : byte
  * A union representation of any JSON value.
  */
 struct JSON {
-public:
-    static @safe pure nothrow JSON arr() {
-        JSON array;
-        array._array = null;
-        array._type = JSON_TYPE.ARRAY;
-
-        return array;
-    }
-
-    static @safe pure nothrow JSON obj() {
-        JSON object;
-        object._object = null;
-        object._type = JSON_TYPE.OBJECT;
-
-        return object;
-    }
 private:
     union {
         bool _boolean;
@@ -251,7 +235,7 @@ public:
      * Returns: A reference to the JSON array stored in this object.
      * Throws: Exception when the JSON type is not an array.
      */
-    @safe pure @property ref inout(JSON[]) innerArray() inout {
+    @safe pure @property ref inout(JSON[]) arr() inout {
         if (_type != JSON_TYPE.ARRAY) {
             throw new Exception("JSON value is not an array!");
         }
@@ -263,7 +247,7 @@ public:
      * Returns: A reference to the JSON object stored in this object.
      * Throws: Exception when the JSON type is not an object.
      */
-    @safe pure @property ref inout(JSON[string]) innerObject() inout {
+    @safe pure @property ref inout(JSON[string]) obj() inout {
         if (_type != JSON_TYPE.OBJECT) {
             throw new Exception("JSON value is not an object!");
         }
@@ -386,9 +370,9 @@ public:
     JSON opBinary(string op : "~", T)(T val) {
         static if(is(T == JSON)) {
             // We can avoid a copy for JSON types.
-            return JSON(innerArray ~ val);
+            return JSON(arr ~ val);
         } else {
-            return JSON(innerArray ~ JSON(val));
+            return JSON(arr ~ JSON(val));
         }
     }
 
@@ -396,9 +380,9 @@ public:
     @safe pure
     void put(T)(T val) {
         static if(is(T == JSON)) {
-            innerArray ~= val;
+            arr ~= val;
         } else {
-            innerArray ~= JSON(val);
+            arr ~= JSON(val);
         }
     }
 
@@ -408,23 +392,23 @@ public:
     }
 
     @safe pure inout(JSON) opIndex(size_t index) inout {
-        return innerArray[index];
+        return arr[index];
     }
 
     @safe pure inout(JSON) opIndex(string key) inout {
-        return innerObject[key];
+        return obj[key];
     }
 
     @safe pure void opIndexAssign(T)(T value, size_t index) {
-        innerArray[index] = value;
+        arr[index] = value;
     }
 
     pure void opIndexAssign(T)(T value, string key) {
-        innerObject[key] = value;
+        obj[key] = value;
     }
 
     pure JSON* opBinaryRight(string op : "in")(string key) {
-        return key in innerObject;
+        return key in obj;
     }
 
     int opApply(int delegate(ref JSON val) dg) {
@@ -613,6 +597,28 @@ public:
             static assert(false, "No match for JSON opEquals!");
         }
     }
+}
+
+/**
+ * Returns: A new JSON object.
+ */
+@safe pure nothrow JSON jsonObj() {
+    JSON object;
+    object._object = null;
+    object._type = JSON_TYPE.OBJECT;
+
+    return object;
+}
+
+/**
+ * Returns: A new JSON array.
+ */
+@safe pure nothrow JSON jsonArr() {
+    JSON array;
+    array._array = null;
+    array._type = JSON_TYPE.ARRAY;
+
+    return array;
 }
 
 /**
@@ -1807,7 +1813,7 @@ unittest {
     }
 }
 
-// Test innerArray
+// Test arr
 unittest {
     bool b = true;
     uint un = 1;
@@ -1818,28 +1824,28 @@ unittest {
     JSON[string] obj;
 
     JSON j;
-    assertThrown(j.innerArray);
+    assertThrown(j.arr);
 
     j = b;
-    assertThrown(j.innerArray);
+    assertThrown(j.arr);
 
     j = un;
-    assertThrown(j.innerArray);
+    assertThrown(j.arr);
 
     j = n;
-    assertThrown(j.innerArray);
+    assertThrown(j.arr);
 
     j = r;
-    assertThrown(j.innerArray);
+    assertThrown(j.arr);
 
     j = str;
-    assertThrown(j.innerArray);
+    assertThrown(j.arr);
 
     j = arr;
-    assert(j.innerArray == arr);
+    assert(j.arr == arr);
 
     j = obj;
-    assertThrown(j.innerArray);
+    assertThrown(j.arr);
 }
 
 // Test obj
@@ -1853,28 +1859,28 @@ unittest {
     JSON[string] obj;
 
     JSON j;
-    assertThrown(j.innerObject);
+    assertThrown(j.obj);
 
     j = b;
-    assertThrown(j.innerObject);
+    assertThrown(j.obj);
 
     j = un;
-    assertThrown(j.innerObject);
+    assertThrown(j.obj);
 
     j = n;
-    assertThrown(j.innerObject);
+    assertThrown(j.obj);
 
     j = r;
-    assertThrown(j.innerObject);
+    assertThrown(j.obj);
 
     j = str;
-    assertThrown(j.innerObject);
+    assertThrown(j.obj);
 
     j = arr;
-    assertThrown(j.innerObject);
+    assertThrown(j.obj);
 
     j = obj;
-    assert(j.innerObject == obj);
+    assert(j.obj == obj);
 }
 
 // Test isNum
@@ -2052,9 +2058,9 @@ unittest {
     assert(j.isObj);
 }
 
-// Test JSON.arr()
+// Test jsonArr()
 unittest {
-    JSON arr = JSON.arr();
+    JSON arr = jsonArr();
 
     assert(arr.isArr);
     assert(arr.length == 0);
@@ -2062,7 +2068,7 @@ unittest {
 
 // Test array concatenate.
 unittest {
-    JSON j = JSON.arr();
+    JSON j = jsonArr();
 
     JSON[] arr;
     JSON[string] obj;
@@ -2078,20 +2084,20 @@ unittest {
     j = j ~ obj;
     j = j ~ otherJ;
 
-    assert(j.innerArray[0].isNull);
-    assert(cast(bool) j.innerArray[1] == true);
-    assert(cast(uint) j.innerArray[2] == 1u);
-    assert(cast(int) j.innerArray[3] == 1);
-    assert(cast(real) j.innerArray[4] == 1.0);
-    assert(cast(string) j.innerArray[5] == "bla");
-    assert(j.innerArray[6].innerArray == []);
-    assert(j.innerArray[7].innerObject.length == 0);
-    assert(cast(int) j.innerArray[8] == 3);
+    assert(j.arr[0].isNull);
+    assert(cast(bool) j.arr[1] == true);
+    assert(cast(uint) j.arr[2] == 1u);
+    assert(cast(int) j.arr[3] == 1);
+    assert(cast(real) j.arr[4] == 1.0);
+    assert(cast(string) j.arr[5] == "bla");
+    assert(j.arr[6].arr == []);
+    assert(j.arr[7].obj.length == 0);
+    assert(cast(int) j.arr[8] == 3);
 }
 
 // Test array append.
 unittest {
-    JSON j = JSON.arr();
+    JSON j = jsonArr();
 
     JSON[] arr;
     JSON[string] obj;
@@ -2110,20 +2116,20 @@ unittest {
     j ~= obj;
     j ~= otherJ;
 
-    assert(j.innerArray[0].isNull);
-    assert(cast(bool) j.innerArray[1] == true);
-    assert(cast(uint) j.innerArray[2] == 1u);
-    assert(cast(int) j.innerArray[3] == 1);
-    assert(cast(float) j.innerArray[4] == 1.0);
-    assert(cast(string) j.innerArray[5] == "bla");
-    assert(j.innerArray[6].innerArray == arr);
-    assert(j.innerArray[7].innerObject == obj);
-    assert(cast(int) j.innerArray[8] == 3);
+    assert(j.arr[0].isNull);
+    assert(cast(bool) j.arr[1] == true);
+    assert(cast(uint) j.arr[2] == 1u);
+    assert(cast(int) j.arr[3] == 1);
+    assert(cast(float) j.arr[4] == 1.0);
+    assert(cast(string) j.arr[5] == "bla");
+    assert(j.arr[6].arr == arr);
+    assert(j.arr[7].obj == obj);
+    assert(cast(int) j.arr[8] == 3);
 }
 
 // Test array index get.
 unittest {
-    JSON j = JSON.arr();
+    JSON j = jsonArr();
 
     bool b = true;
     uint un = 1;
@@ -2134,15 +2140,15 @@ unittest {
     JSON[string] obj;
     JSON otherJ = 3;
 
-    j.innerArray ~= JSON(null);
-    j.innerArray ~= JSON(b);
-    j.innerArray ~= JSON(un);
-    j.innerArray ~= JSON(n);
-    j.innerArray ~= JSON(r);
-    j.innerArray ~= JSON(str);
-    j.innerArray ~= JSON(arr);
-    j.innerArray ~= JSON(obj);
-    j.innerArray ~= otherJ;
+    j.arr ~= JSON(null);
+    j.arr ~= JSON(b);
+    j.arr ~= JSON(un);
+    j.arr ~= JSON(n);
+    j.arr ~= JSON(r);
+    j.arr ~= JSON(str);
+    j.arr ~= JSON(arr);
+    j.arr ~= JSON(obj);
+    j.arr ~= otherJ;
 
     assert(j[0].isNull);
     assert(cast(bool) j[1] == b);
@@ -2150,14 +2156,14 @@ unittest {
     assert(cast(int) j[3] == n);
     assert(cast(real) j[4] == r);
     assert(cast(string) j[5] == str);
-    assert(j[6].innerArray == arr);
-    assert(j[7].innerObject == obj);
+    assert(j[6].arr == arr);
+    assert(j[7].obj == obj);
     assert(cast(int) j[8] == 3);
 }
 
 // Test array index set.
 unittest {
-    JSON j = JSON.arr();
+    JSON j = jsonArr();
 
     JSON[] arr;
     JSON[string] obj;
@@ -2181,14 +2187,14 @@ unittest {
     assert(cast(int) j[3] == 1);
     assert(cast(real) j[4] == 1.0);
     assert(cast(string) j[5] == "bla");
-    assert(j[6].innerArray == arr);
-    assert(j[7].innerObject == obj);
+    assert(j[6].arr == arr);
+    assert(j[7].obj == obj);
     assert(cast(int) j[8] == 3);
 }
 
-// Test JSON.obj()
+// Test jsonObj()
 unittest {
-    JSON obj = JSON.obj();
+    JSON obj = jsonObj();
 
     assert(obj.isObj);
     assert(obj.length == 0);
@@ -2236,7 +2242,7 @@ unittest {
     JSON[string] obj;
     JSON otherJ = 3;
 
-    JSON j = JSON.obj();
+    JSON j = jsonObj();
 
     j["a"] = null;
     j["b"] = true;
@@ -2261,7 +2267,7 @@ unittest {
 
 // Test "in" operator for object.
 unittest {
-    JSON obj = JSON.obj();
+    JSON obj = jsonObj();
 
     obj["a"] = 347;
     obj["b"] = true;
@@ -2287,15 +2293,15 @@ unittest {
     assert(!JSON(0.0));
     assert(JSON("wat"));
     assert(!JSON(""));
-    assert(!JSON.arr());
-    assert(!JSON.obj());
+    assert(!jsonArr());
+    assert(!jsonObj());
 
-    auto arr = JSON.arr();
+    auto arr = jsonArr();
     arr.length = 1;
 
     assert(arr);
 
-    auto obj = JSON.obj();
+    auto obj = jsonObj();
     obj["a"] = 1;
 
     assert(obj);
@@ -2303,7 +2309,7 @@ unittest {
 
 // Test array value-only foreach for arrays.
 unittest {
-    JSON arr = JSON.arr();
+    JSON arr = jsonArr();
 
     arr ~= 347;
     arr ~= true;
@@ -2336,7 +2342,7 @@ unittest {
 
 // Test index-value foreach for arrays.
 unittest {
-    JSON arr = JSON.arr();
+    JSON arr = jsonArr();
 
     arr ~= 347;
     arr ~= true;
@@ -2363,7 +2369,7 @@ unittest {
 
 // Test value-only foreach for objects.
 unittest {
-    JSON obj = JSON.obj();
+    JSON obj = jsonObj();
 
     obj["a"] = 347;
     obj["b"] = true;
@@ -2389,7 +2395,7 @@ unittest {
 
 // Test key-value foreach for objects.
 unittest {
-    JSON obj = JSON.obj();
+    JSON obj = jsonObj();
 
     obj["a"] = 347;
     obj["b"] = true;
@@ -2422,7 +2428,7 @@ unittest {
 
 // Test key-value foreach for arrays.
 unittest {
-    JSON arr = JSON.arr();
+    JSON arr = jsonArr();
 
     arr ~= 347;
     arr ~= true;
@@ -2449,7 +2455,7 @@ unittest {
 
 // Test that index-value foreach for objects causes an exception.
 unittest {
-    JSON obj = JSON.obj();
+    JSON obj = jsonObj();
 
     bool failed = false;
 
@@ -2465,7 +2471,7 @@ unittest {
 
 // Test array value-only foreach_reverse for arrays.
 unittest {
-    JSON arr = JSON.arr();
+    JSON arr = jsonArr();
 
     arr ~= 347;
     arr ~= true;
@@ -2496,7 +2502,7 @@ unittest {
 
 // Test index-value foreach_reverse for arrays.
 unittest {
-    JSON arr = JSON.arr();
+    JSON arr = jsonArr();
 
     arr ~= 347;
     arr ~= true;
@@ -2527,7 +2533,7 @@ unittest {
 
 // Test value-only foreach_reverse for objects.
 unittest {
-    JSON obj = JSON.obj();
+    JSON obj = jsonObj();
 
     obj["a"] = 347;
     obj["b"] = true;
@@ -2553,7 +2559,7 @@ unittest {
 
 // Test key-value foreach_reverse for objects.
 unittest {
-    JSON obj = JSON.obj();
+    JSON obj = jsonObj();
 
     obj["a"] = 347;
     obj["b"] = true;
@@ -2586,7 +2592,7 @@ unittest {
 
 // Test key-value foreach_reverse for arrays.
 unittest {
-    JSON arr = JSON.arr();
+    JSON arr = jsonArr();
 
     arr ~= 347;
     arr ~= true;
@@ -2617,7 +2623,7 @@ unittest {
 
 // Test that index-value foreach_reverse for objects causes an exception.
 unittest {
-    JSON obj = JSON.obj();
+    JSON obj = jsonObj();
 
     bool failed = false;
 
@@ -2651,7 +2657,7 @@ unittest {
     assert(floating == jfloating);
     assert(jfloating != "2.5");
 
-    JSON arr = JSON.arr();
+    JSON arr = jsonArr();
     arr.length = 3;
 
     arr[0] = 123;
@@ -2660,13 +2666,13 @@ unittest {
 
     assert(arr == [123, 456, 789]);
 
-    JSON obj1 = JSON.obj();
+    JSON obj1 = jsonObj();
 
     obj1["a"] = "wat";
     obj1["b"] = 1;
     obj1["c"] = null;
 
-    JSON obj2 = JSON.obj();
+    JSON obj2 = jsonObj();
 
     obj2["a"] = "wat";
     obj2["b"] = 1;
@@ -2940,7 +2946,7 @@ unittest {
 
 // Test indented writing
 unittest {
-    JSON j = JSON.arr();
+    JSON j = jsonArr();
 
     j ~= 3;
     j ~= "hello";
