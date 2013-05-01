@@ -622,6 +622,37 @@ public:
 }
 
 /**
+ * Given an input range of JSON convertable values,
+ * produce an array of JSON values.
+ *
+ * Returns: A new JSON array contains values from the input range.
+ */
+@safe pure nothrow JSON toJSONArray(InputRange)(InputRange inputRange)
+if (isInputRange!InputRange && isJSON!(ElementType!InputRange)) {
+    alias ElementType!InputRange E;
+
+    JSON array = jsonArr();
+
+    foreach(val; inputRange) {
+        try {
+            static if (isJSONPrimitive!E
+            || is(E == JSON)
+            || is(E == JSON[])
+            || is(E == JSON[string])) {
+                // The struct's handling of conversion will work here.
+                array ~= val;
+            } else {
+                array ~= convertJSON(val);
+            }
+        } catch (Exception ex) {
+            throw new Error(ex.msg);
+        }
+    }
+
+    return array;
+}
+
+/**
  * Given a value attempt to convert that value into a JSON value.
  *
  * This function can be useful for initialising a JSON value from a literal.
@@ -2960,4 +2991,27 @@ unittest {
     "hello",
     4.5
 ]`);
+}
+
+// Test the toJSONArray function with ranges.
+unittest {
+    JSON j = [1, 2, 3].toJSONArray();
+
+    assert(j.length == 3);
+    assert(j[0] == 1);
+    assert(j[1] == 2);
+    assert(j[2] == 3);
+
+    JSON j2 = [[1, 2], [3, 4]].toJSONArray();
+
+
+    assert(j2.length == 2);
+
+    assert(j2[0].length == 2);
+    assert(j2[0][0] == 1);
+    assert(j2[0][1] == 2);
+
+    assert(j2[1].length == 2);
+    assert(j2[1][0] == 3);
+    assert(j2[1][1] == 4);
 }
