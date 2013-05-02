@@ -183,15 +183,65 @@ public:
         _type = JSON_TYPE.OBJECT;
     }
 
-    @safe pure nothrow void opAssign(T)(T val) {
-        static if(is(T == JSON)) {
-            // We can avoid a copy for JSON types.
-            this = val;
+    @safe pure nothrow T opAssign(T)(T val)
+    if (__traits(isIntegral, T) && !is(T == bool)) {
+        static if (__traits(isUnsigned, T)) {
+            _uinteger = val;
+            _type = JSON_TYPE.UINT;
         } else {
-            // Rewrite assignment into a copy by creating a new struct.
-            JSON j = val;
-            this = j;
+            _integer = val;
+            _type = JSON_TYPE.INT;
         }
+
+        return val;
+    }
+
+    @safe pure nothrow T opAssign(T)(T val)
+    if (is(T == bool)) {
+        _boolean = val;
+        _type = JSON_TYPE.BOOL;
+
+        return val;
+    }
+
+    @safe pure nothrow T opAssign(T)(T val)
+    if (__traits(isFloating, T)) {
+        _floating = val;
+        _type = JSON_TYPE.FLOAT;
+
+        return val;
+    }
+
+    @safe pure nothrow T opAssign(T)(T val)
+    if (is(T == typeof(null))) {
+        _uinteger = 0;
+        _type = JSON_TYPE.NULL;
+
+        return val;
+    }
+
+    @safe pure nothrow T opAssign(T)(T val)
+    if (!is(T == typeof(null)) && is(T : string)) {
+        _str = val;
+        _type = JSON_TYPE.STRING;
+
+        return val;
+    }
+
+    @safe pure nothrow T opAssign(T)(T val)
+    if (!is(T == typeof(null)) && is(T : JSON[])) {
+        _array = val;
+        _type = JSON_TYPE.ARRAY;
+
+        return val;
+    }
+
+    @safe pure nothrow T opAssign(T)(T val)
+    if (!is(T == typeof(null)) && is(T : JSON[string])) {
+        _object = val;
+        _type = JSON_TYPE.OBJECT;
+
+        return val;
     }
 
     @safe pure nothrow @property JSON_TYPE type() const {
@@ -420,7 +470,7 @@ public:
         obj[key] = value;
     }
 
-    pure JSON* opBinaryRight(string op : "in")(string key) {
+    pure inout(JSON*) opBinaryRight(string op : "in")(string key) inout {
         return key in obj;
     }
 
@@ -3027,4 +3077,11 @@ unittest {
     assert(j2[1].length == 2);
     assert(j2[1][0] == 3);
     assert(j2[1][1] == 4);
+}
+
+// Test opAssign.
+unittest {
+    JSON j;
+
+    assert((j = 3) == 3);
 }
