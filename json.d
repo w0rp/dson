@@ -136,7 +136,7 @@ private:
 
     JSON_TYPE _type;
 public:
-    @safe pure nothrow this(T)(T val)
+    @safe pure nothrow this(T)(inout(T) val) inout
     if (__traits(isIntegral, T) && !is(T == bool)) {
         static if (__traits(isUnsigned, T)) {
             _uinteger = val;
@@ -147,37 +147,37 @@ public:
         }
     }
 
-    @safe pure nothrow this(T)(T val)
+    @safe pure nothrow this(T)(inout(T) val) inout
     if (is(T == bool)) {
         _boolean = val;
         _type = JSON_TYPE.BOOL;
     }
 
-    @safe pure nothrow this(T)(T val)
+    @safe pure nothrow this(T)(inout(T) val) inout
     if (__traits(isFloating, T)) {
         _floating = val;
         _type = JSON_TYPE.FLOAT;
     }
 
-    @safe pure nothrow this(T)(T val)
+    @safe pure nothrow this(T)(T val) inout
     if (is(T == typeof(null))) {
         _uinteger = 0;
         _type = JSON_TYPE.NULL;
     }
 
-    @safe pure nothrow this(T)(T val)
+    @safe pure nothrow this(T)(inout(T) val) inout
     if (!is(T == typeof(null)) && is(T : string)) {
         _str = val;
         _type = JSON_TYPE.STRING;
     }
 
-    @safe pure nothrow this(T)(T val)
+    @safe pure nothrow this(T)(inout(T) val) inout
     if (!is(T == typeof(null)) && is(T : JSON[])) {
         _array = val;
         _type = JSON_TYPE.ARRAY;
     }
 
-    @safe pure nothrow this(T)(T val)
+    @safe pure nothrow this(T)(inout(T) val) inout
     if (!is(T == typeof(null)) && is(T : JSON[string])) {
         _object = val;
         _type = JSON_TYPE.OBJECT;
@@ -660,6 +660,8 @@ public:
             static assert(false, "No match for JSON opEquals!");
         }
     }
+
+    // TODO: opCmp
 }
 
 /**
@@ -3084,4 +3086,23 @@ unittest {
     JSON j;
 
     assert((j = 3) == 3);
+}
+
+// Test immutable
+unittest {
+    immutable JSON j1 = true;
+    assert(j1 == true);
+
+    immutable JSON j2 = 3;
+    assert(j2 == 3);
+
+    immutable JSON j3 = -33;
+    assert(j3 == -33);
+
+    immutable JSON j4 = 4.5;
+    assert(j4 == 4.5);
+
+    // FIXME: This fails.
+    //immutable JSON j5 = "some text";
+    //assert(j5 == "some text");
 }
