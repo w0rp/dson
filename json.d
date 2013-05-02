@@ -136,38 +136,51 @@ private:
 
     JSON_TYPE _type;
 public:
-    @safe pure nothrow this(T)(inout(T) val) inout {
-        static if(is(T == JSON)) {
-            this = val;
-        } else static if(is(T == bool)) {
-            _boolean = val;
-            _type = JSON_TYPE.BOOL;
-        } else static if(__traits(isUnsigned, T)) {
+    @safe pure nothrow this(T)(T val)
+    if (__traits(isIntegral, T) && !is(T == bool)) {
+        static if (__traits(isUnsigned, T)) {
             _uinteger = val;
             _type = JSON_TYPE.UINT;
-        } else static if(__traits(isIntegral, T)) {
+        } else {
             _integer = val;
             _type = JSON_TYPE.INT;
-        } else static if(__traits(isFloating, T)) {
-            _floating = val;
-            _type = JSON_TYPE.FLOAT;
-        } else static if(is(T == typeof(null))) {
-            // This must come before the implicit
-            // array conversion.
-            _uinteger = 0;
-            _type = JSON_TYPE.NULL;
-        } else static if(is(T : string)) {
-            _str = val;
-            _type = JSON_TYPE.STRING;
-        } else static if(is(T : JSON[])) {
-            _array = val;
-            _type = JSON_TYPE.ARRAY;
-        } else static if(is(T == JSON[string])) {
-            _object = val;
-            _type = JSON_TYPE.OBJECT;
-        } else {
-            static assert(false, "Invalid type for JSON!");
         }
+    }
+
+    @safe pure nothrow this(T)(T val)
+    if (is(T == bool)) {
+        _boolean = val;
+        _type = JSON_TYPE.BOOL;
+    }
+
+    @safe pure nothrow this(T)(T val)
+    if (__traits(isFloating, T)) {
+        _floating = val;
+        _type = JSON_TYPE.FLOAT;
+    }
+
+    @safe pure nothrow this(T)(T val)
+    if (is(T == typeof(null))) {
+        _uinteger = 0;
+        _type = JSON_TYPE.NULL;
+    }
+
+    @safe pure nothrow this(T)(T val)
+    if (!is(T == typeof(null)) && is(T : string)) {
+        _str = val;
+        _type = JSON_TYPE.STRING;
+    }
+
+    @safe pure nothrow this(T)(T val)
+    if (!is(T == typeof(null)) && is(T : JSON[])) {
+        _array = val;
+        _type = JSON_TYPE.ARRAY;
+    }
+
+    @safe pure nothrow this(T)(T val)
+    if (!is(T == typeof(null)) && is(T : JSON[string])) {
+        _object = val;
+        _type = JSON_TYPE.OBJECT;
     }
 
     @safe pure nothrow void opAssign(T)(T val) {
@@ -391,11 +404,11 @@ public:
         put(val);
     }
 
-    @safe pure inout(JSON) opIndex(size_t index) inout {
+    @safe pure ref inout(JSON) opIndex(size_t index) inout {
         return arr[index];
     }
 
-    @safe pure inout(JSON) opIndex(string key) inout {
+    @safe pure ref inout(JSON) opIndex(string key) inout {
         return obj[key];
     }
 
