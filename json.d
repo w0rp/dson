@@ -113,7 +113,6 @@ enum JSON_TYPE : byte
     BOOL,
     STRING,
     INT,
-    UINT,
     FLOAT,
     OBJECT,
     ARRAY
@@ -128,7 +127,6 @@ private:
         bool _boolean;
         string _str;
         long _integer;
-        ulong _uinteger;
         real _floating;
         JSON[string] _object;
         JSON[] _array;
@@ -136,112 +134,76 @@ private:
 
     JSON_TYPE _type;
 public:
-    @safe pure nothrow this(T)(inout(T) val) inout
-    if (__traits(isIntegral, T) && !is(T == bool)) {
-        static if (__traits(isUnsigned, T)) {
-            _uinteger = val;
-            _type = JSON_TYPE.UINT;
-        } else {
-            _integer = val;
-            _type = JSON_TYPE.INT;
-        }
+    @safe pure nothrow this(long val) inout {
+        _integer = val;
+        _type = JSON_TYPE.INT;
     }
 
-    @safe pure nothrow this(T)(inout(T) val) inout
-    if (is(T == bool)) {
+    @safe pure nothrow this(bool val) inout {
         _boolean = val;
         _type = JSON_TYPE.BOOL;
     }
 
-    @safe pure nothrow this(T)(inout(T) val) inout
-    if (__traits(isFloating, T)) {
+    @safe pure nothrow this(real val) inout {
         _floating = val;
         _type = JSON_TYPE.FLOAT;
     }
 
-    @safe pure nothrow this(T)(T val) inout
-    if (is(T == typeof(null))) {
-        _uinteger = 0;
+    @safe pure nothrow this(typeof(null) val) inout {
+        _integer = 0;
         _type = JSON_TYPE.NULL;
     }
 
-    @safe pure nothrow this(T)(inout(T) val) inout
-    if (!is(T == typeof(null)) && is(T : string)) {
+    @safe pure nothrow this(inout(string) val) inout {
         _str = val;
         _type = JSON_TYPE.STRING;
     }
 
-    @safe pure nothrow this(T)(inout(T) val) inout
-    if (!is(T == typeof(null)) && is(T : JSON[])) {
+    @safe pure nothrow this(inout(JSON[]) val) inout {
         _array = val;
         _type = JSON_TYPE.ARRAY;
     }
 
-    @safe pure nothrow this(T)(inout(T) val) inout
-    if (!is(T == typeof(null)) && is(T : JSON[string])) {
+    @safe pure nothrow this(inout(JSON[string]) val) inout {
         _object = val;
         _type = JSON_TYPE.OBJECT;
     }
 
-    @safe pure nothrow T opAssign(T)(T val)
-    if (__traits(isIntegral, T) && !is(T == bool)) {
-        static if (__traits(isUnsigned, T)) {
-            _uinteger = val;
-            _type = JSON_TYPE.UINT;
-        } else {
-            _integer = val;
-            _type = JSON_TYPE.INT;
-        }
-
-        return val;
+    @safe pure nothrow long opAssign(long val) {
+        _type = JSON_TYPE.INT;
+        return _integer = val;
     }
 
-    @safe pure nothrow T opAssign(T)(T val)
-    if (is(T == bool)) {
-        _boolean = val;
+    @safe pure nothrow bool opAssign(bool val) {
         _type = JSON_TYPE.BOOL;
-
-        return val;
+        return _boolean = val;
     }
 
-    @safe pure nothrow T opAssign(T)(T val)
-    if (__traits(isFloating, T)) {
-        _floating = val;
+    @safe pure nothrow real opAssign(real val) {
         _type = JSON_TYPE.FLOAT;
-
-        return val;
+        return _floating = val;
     }
 
-    @safe pure nothrow T opAssign(T)(T val)
-    if (is(T == typeof(null))) {
-        _uinteger = 0;
+    @safe pure nothrow typeof(null) opAssign(typeof(null) val) {
+        _integer = 0;
         _type = JSON_TYPE.NULL;
 
-        return val;
+        return null;
     }
 
-    @safe pure nothrow T opAssign(T)(T val)
-    if (!is(T == typeof(null)) && is(T : string)) {
-        _str = val;
+    @safe pure nothrow string opAssign(string val) {
         _type = JSON_TYPE.STRING;
-
-        return val;
+        return _str = val;
     }
 
-    @safe pure nothrow T opAssign(T)(T val)
-    if (!is(T == typeof(null)) && is(T : JSON[])) {
-        _array = val;
+    @safe pure nothrow JSON[] opAssign(JSON[] val) {
         _type = JSON_TYPE.ARRAY;
-
-        return val;
+        return _array = val;
     }
 
-    @safe pure nothrow T opAssign(T)(T val)
-    if (!is(T == typeof(null)) && is(T : JSON[string])) {
-        _object = val;
+    @safe pure nothrow JSON[string] opAssign(JSON[string] val) {
         _type = JSON_TYPE.OBJECT;
-
-        return val;
+        return _object = val;
     }
 
     @safe pure nothrow @property JSON_TYPE type() const {
@@ -254,7 +216,7 @@ public:
      */
     @safe pure nothrow @property bool isNum() const {
         with(JSON_TYPE) switch(_type) {
-        case BOOL, UINT, INT, FLOAT:
+        case BOOL, INT, FLOAT:
             return true;
         default:
             return false;
@@ -348,8 +310,6 @@ public:
         with(JSON_TYPE) final switch (_type) {
         case BOOL:
             return _boolean ? "true" : "false";
-        case UINT:
-            return to!string(_uinteger);
         case INT:
             return to!string(_integer);
         case FLOAT:
@@ -370,8 +330,6 @@ public:
         with(JSON_TYPE) final switch (_type) {
         case BOOL:
             return cast(T) _boolean;
-        case UINT:
-            return cast(T) _uinteger;
         case INT:
             return cast(T) _integer;
         case FLOAT:
@@ -397,8 +355,6 @@ public:
             with(JSON_TYPE) switch (_type) {
             case BOOL:
                 return cast(T) _boolean;
-            case UINT:
-                return cast(T) _uinteger;
             case INT:
                 return cast(T) _integer;
             case FLOAT:
@@ -599,8 +555,6 @@ public:
             with(JSON_TYPE) final switch (_type) {
             case BOOL:
                 return _boolean == other._boolean;
-            case UINT:
-                return _uinteger == other._uinteger;
             case INT:
                 return _integer == other._integer;
             case FLOAT:
@@ -647,8 +601,6 @@ public:
             with(JSON_TYPE) switch (_type) {
             case BOOL:
                 return _boolean == other;
-            case UINT:
-                return _uinteger == other;
             case INT:
                 return _integer == other;
             case FLOAT:
@@ -929,9 +881,6 @@ private void writePrettyJSON (int spaces = 0, T)
     case INT:
         copy(to!string(json._integer), outRange);
     break;
-    case UINT:
-        copy(to!string(json._uinteger), outRange);
-    break;
     case FLOAT:
         copy(to!string(json._floating), outRange);
     break;
@@ -1122,10 +1071,8 @@ private struct JSONReader(T) {
     }
 
     JSON parseNumber() {
-        enum byte SIGNED = 2;
-        enum byte REAL = 4;
+        bool floating = false;
 
-        byte type;
         auto result = appender!string();
 
         void parseDigits() {
@@ -1141,7 +1088,6 @@ private struct JSONReader(T) {
         }
 
         if (front() == '-') {
-            type |= SIGNED;
             result.put(moveFront());
         }
 
@@ -1158,14 +1104,16 @@ private struct JSONReader(T) {
         }
 
         if (!empty() && front() == '.') {
-            type |= REAL;
+            floating = true;
+
             result.put(moveFront());
 
             parseDigits();
         }
 
         if (!empty() && (front() == 'e' || front() == 'E')) {
-            type |= REAL;
+            floating = true;
+
             result.put(moveFront());
 
             if(front() == '+' || front() == '-') {
@@ -1177,15 +1125,11 @@ private struct JSONReader(T) {
 
         string str = result.data();
 
-        if (type & REAL) {
+        if (floating) {
             return JSON(parse!real(str));
         }
 
-        if (type & SIGNED) {
-            return JSON(parse!long(str));
-        }
-
-        return JSON(parse!ulong(str));
+        return JSON(parse!long(str));
     }
 
     JSON[] parseArray() {
@@ -1382,13 +1326,6 @@ unittest {
 }
 
 unittest {
-    uint x = 3;
-    JSON j = x;
-
-    assert(j.type == JSON_TYPE.UINT);
-}
-
-unittest {
     int x = 3;
     JSON j = x;
 
@@ -1470,20 +1407,6 @@ unittest {
 
 unittest {
     int x = -2;
-    JSON j = x;
-
-    assert(cast(bool) j == true);
-}
-
-unittest {
-    uint x = 0;
-    JSON j = x;
-
-    assert(cast(bool) j == false);
-}
-
-unittest {
-    uint x = 2;
     JSON j = x;
 
     assert(cast(bool) j == true);
@@ -1582,20 +1505,6 @@ unittest {
     JSON j = x;
 
     assert(cast(short) j == -2);
-}
-
-unittest {
-    uint x = 0;
-    JSON j = x;
-
-    assert(cast(int) j == 0);
-}
-
-unittest {
-    uint x = 2;
-    JSON j = x;
-
-    assert(cast(short) j == 2);
 }
 
 unittest {
@@ -1700,20 +1609,6 @@ unittest {
     JSON j = x;
 
     assert(cast(real) j == -2.0);
-}
-
-unittest {
-    uint x = 0;
-    JSON j = x;
-
-    assert(cast(real) j == 0);
-}
-
-unittest {
-    uint x = 25;
-    JSON j = x;
-
-    assert(cast(real) j == 25);
 }
 
 unittest {
@@ -1912,7 +1807,6 @@ unittest {
 // Test arr
 unittest {
     bool b = true;
-    uint un = 1;
     int n = 1;
     real r = 1.0;
     string str = "";
@@ -1923,9 +1817,6 @@ unittest {
     assertThrown(j.arr);
 
     j = b;
-    assertThrown(j.arr);
-
-    j = un;
     assertThrown(j.arr);
 
     j = n;
@@ -1947,7 +1838,6 @@ unittest {
 // Test obj
 unittest {
     bool b = true;
-    uint un = 1;
     int n = 1;
     real r = 1.0;
     string str = "";
@@ -1958,9 +1848,6 @@ unittest {
     assertThrown(j.obj);
 
     j = b;
-    assertThrown(j.obj);
-
-    j = un;
     assertThrown(j.obj);
 
     j = n;
@@ -1982,7 +1869,6 @@ unittest {
 // Test isNum
 unittest {
     bool b = true;
-    uint un = 1;
     int n = 1;
     real r = 1.0;
     string str = "";
@@ -1993,9 +1879,6 @@ unittest {
     assert(!j.isNum);
 
     j = b;
-    assert(j.isNum);
-
-    j = un;
     assert(j.isNum);
 
     j = n;
@@ -2017,7 +1900,6 @@ unittest {
 // Test isStr
 unittest {
     bool b = true;
-    uint un = 1;
     int n = 1;
     real r = 1.0;
     string str = "";
@@ -2028,9 +1910,6 @@ unittest {
     assert(!j.isNum);
 
     j = b;
-    assert(!j.isStr);
-
-    j = un;
     assert(!j.isStr);
 
     j = n;
@@ -2052,7 +1931,6 @@ unittest {
 // Test isNull
 unittest {
     bool b = true;
-    uint un = 1;
     int n = 1;
     real r = 1.0;
     string str = "";
@@ -2063,9 +1941,6 @@ unittest {
     assert(j.isNull);
 
     j = b;
-    assert(!j.isNull);
-
-    j = un;
     assert(!j.isNull);
 
     j = n;
@@ -2087,7 +1962,6 @@ unittest {
 // Test isArr
 unittest {
     bool b = true;
-    uint un = 1;
     int n = 1;
     real r = 1.0;
     string str = "";
@@ -2098,9 +1972,6 @@ unittest {
     assert(!j.isArr);
 
     j = b;
-    assert(!j.isArr);
-
-    j = un;
     assert(!j.isArr);
 
     j = n;
@@ -2122,7 +1993,6 @@ unittest {
 // Test isObj
 unittest {
     bool b = true;
-    uint un = 1;
     int n = 1;
     real r = 1.0;
     string str = "";
@@ -2133,9 +2003,6 @@ unittest {
     assert(!j.isObj);
 
     j = b;
-    assert(!j.isObj);
-
-    j = un;
     assert(!j.isObj);
 
     j = n;
@@ -2182,7 +2049,6 @@ unittest {
 
     assert(j.arr[0].isNull);
     assert(cast(bool) j.arr[1] == true);
-    assert(cast(uint) j.arr[2] == 1u);
     assert(cast(int) j.arr[3] == 1);
     assert(cast(real) j.arr[4] == 1.0);
     assert(cast(string) j.arr[5] == "bla");
@@ -2214,7 +2080,6 @@ unittest {
 
     assert(j.arr[0].isNull);
     assert(cast(bool) j.arr[1] == true);
-    assert(cast(uint) j.arr[2] == 1u);
     assert(cast(int) j.arr[3] == 1);
     assert(cast(float) j.arr[4] == 1.0);
     assert(cast(string) j.arr[5] == "bla");
@@ -2228,7 +2093,6 @@ unittest {
     JSON j = jsonArr();
 
     bool b = true;
-    uint un = 1;
     int n = 1;
     real r = 1.0;
     string str = "bla";
@@ -2238,7 +2102,6 @@ unittest {
 
     j.arr ~= JSON(null);
     j.arr ~= JSON(b);
-    j.arr ~= JSON(un);
     j.arr ~= JSON(n);
     j.arr ~= JSON(r);
     j.arr ~= JSON(str);
@@ -2248,13 +2111,12 @@ unittest {
 
     assert(j[0].isNull);
     assert(cast(bool) j[1] == b);
-    assert(cast(uint) j[2] == un);
     assert(cast(int) j[3] == n);
-    assert(cast(real) j[4] == r);
-    assert(cast(string) j[5] == str);
-    assert(j[6].arr == arr);
-    assert(j[7].obj == obj);
-    assert(cast(int) j[8] == 3);
+    assert(cast(real) j[3] == r);
+    assert(cast(string) j[4] == str);
+    assert(j[5].arr == arr);
+    assert(j[6].obj == obj);
+    assert(cast(int) j[7] == 3);
 }
 
 // Test array index set.
@@ -2279,7 +2141,6 @@ unittest {
 
     assert(j[0].isNull);
     assert(cast(bool) j[1] == true);
-    assert(cast(uint) j[2] == 1u);
     assert(cast(int) j[3] == 1);
     assert(cast(real) j[4] == 1.0);
     assert(cast(string) j[5] == "bla");
@@ -2299,7 +2160,6 @@ unittest {
 // Test object key get.
 unittest {
     bool b = true;
-    uint un = 1;
     int n = 1;
     real r = 1.0;
     string str = "bla";
@@ -2311,7 +2171,6 @@ unittest {
 
     origObj["a"] = JSON(null);
     origObj["b"] = JSON(b);
-    origObj["c"] = JSON(un);
     origObj["d"] = JSON(n);
     origObj["e"] = JSON(r);
     origObj["f"] = JSON(str);
@@ -2323,7 +2182,6 @@ unittest {
 
     assert(j["a"].isNull);
     assert(cast(bool) j["b"] == b);
-    assert(cast(uint) j["c"] == un);
     assert(cast(int) j["d"] == n);
     assert(cast(real) j["e"] == r);
     assert(cast(string) j["f"] == str);
@@ -2352,7 +2210,6 @@ unittest {
 
     assert(j["a"].isNull);
     assert(cast(bool) j["b"] == true);
-    assert(cast(uint) j["c"] == 1u);
     assert(cast(int) j["d"] == 1);
     assert(cast(real) j["e"] == 1.0);
     assert(cast(string) j["f"] == "bla");
@@ -2906,7 +2763,6 @@ unittest {
     assert(cast(int) parseJSON(`123`) == 123);
     assert(cast(int) parseJSON(`-340`) == -340);
     assert(cast(real) parseJSON(`9.53`) == 9.53);
-    assert(cast(uint) parseJSON(`57e2`) == 5_700);
     assert(cast(int) parseJSON(`-123E3`) == -123_000);
     assert(cast(int) parseJSON(`-123E+3`) == -123_000);
     assert(cast(real) parseJSON(`-123E-3`) == -123e-3);
