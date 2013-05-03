@@ -68,6 +68,7 @@ import std.stdio;
 
 version(unittest) {
     import std.exception;
+    import std.math;
 }
 
 /**
@@ -1622,7 +1623,7 @@ unittest {
     float x = 2.5;
     JSON j = x;
 
-    assert(cast(real) j == 2.5);
+    assert(approxEqual(cast(real) j, 2.5, 0.001));
 }
 
 // Test invalid real conversions.
@@ -2762,10 +2763,10 @@ unittest {
 unittest {
     assert(cast(int) parseJSON(`123`) == 123);
     assert(cast(int) parseJSON(`-340`) == -340);
-    assert(cast(real) parseJSON(`9.53`) == 9.53);
+    assert(approxEqual(cast(real) parseJSON(`9.53`), 9.53, 0.001));
     assert(cast(int) parseJSON(`-123E3`) == -123_000);
     assert(cast(int) parseJSON(`-123E+3`) == -123_000);
-    assert(cast(real) parseJSON(`-123E-3`) == -123e-3);
+    assert(approxEqual(cast(double) parseJSON(`123E-3`), 123e-3, 0.001));
     assert(cast(int) parseJSON(`-0.`) == 0);
 }
 
@@ -2814,7 +2815,7 @@ unittest {
     assert(cast(string) obj2["foo"] == "bla de bla");
     assert(cast(string) obj2["john"] == "something else");
     assert(obj2["bar"].isNull);
-    assert(cast(real) obj2["jane"] == 4.7);
+    assert(approxEqual(cast(real) obj2["jane"], 4.7, 0.001));
 }
 
 // Test parseJSON on empty arrays and objects
