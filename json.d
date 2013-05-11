@@ -732,12 +732,12 @@ class JSONParseException : JSONException {
     }
 }
 
-private void newline(T)(T outputRange) {
-    outputRange.put('\n');
+private void newline(T)(T outRange) {
+    outRange.put('\n');
 }
 
-private void indent(T)(T outputRange, int spaces) {
-    repeat(' ').take(spaces).copy(outputRange);
+private void indent(T)(T outRange, int spaces) {
+    repeat(' ').take(spaces).copy(outRange);
 }
 
 /**
@@ -928,22 +928,17 @@ string toJSON(int spaces = 0)(in JSON json) {
     return result.data();
 }
 
-enum Spaces : bool {
-    off,
-    on
-}
-
-private struct JSONReader(bool Spaces = Spaces.on, T) {
-    T jsonRange;
+private struct JSONReader(InputRange) {
+    InputRange jsonRange;
     long line = 1;
     long col = 1;
 
-    this(T jsonRange) {
+    this(InputRange jsonRange) {
         this.jsonRange = jsonRange;
     }
 
-    void complain(string reason) {
-        throw new JSONParseException(reason, line, col);
+    auto complaint(string reason) {
+        return new JSONParseException(reason, line, col);
     }
 
     bool empty() {
@@ -956,8 +951,7 @@ private struct JSONReader(bool Spaces = Spaces.on, T) {
         try {
             jsonRange.popFront();
         } catch {
-            complain("Unexpected end of input");
-            assert(0);
+            throw complaint("Unexpected end of input");
         }
     }
 
@@ -965,8 +959,7 @@ private struct JSONReader(bool Spaces = Spaces.on, T) {
         try {
             return jsonRange.front();
         } catch {
-            complain("Unexpected end of input");
-            assert(0);
+            throw complaint("Unexpected end of input");
         }
     }
 
@@ -1016,7 +1009,7 @@ private struct JSONReader(bool Spaces = Spaces.on, T) {
         auto result = appender!string();
 
         if (moveFront() != '"') {
-            complain("Expected \"");
+            throw complaint("Expected \"");
         }
 
         loop: while (true) {
@@ -1069,7 +1062,7 @@ private struct JSONReader(bool Spaces = Spaces.on, T) {
                             adjust = 'A' - 10;
                         break;
                         default:
-                            complain("Expected a hex character");
+                            throw complaint("Expected a hex character");
                         break;
                         }
 
@@ -1082,7 +1075,7 @@ private struct JSONReader(bool Spaces = Spaces.on, T) {
                     result.put(toUTF8(buf, val));
                 break;
                 default:
-                    complain("Invalid escape character");
+                    throw complaint("Invalid escape character");
                 break;
                 }
             break;
@@ -1116,7 +1109,7 @@ private struct JSONReader(bool Spaces = Spaces.on, T) {
                     accum = cast(T) (accum * 10 + (moveFront() - '0'));
 
                     if (accum < 0) {
-                        complain("overflow error!");
+                        throw complaint("overflow error!");
                     }
                 break;
                 default:
@@ -1158,7 +1151,7 @@ private struct JSONReader(bool Spaces = Spaces.on, T) {
             parseDigits(exponent);
         }
 
-        // XXX: Negative 0 becomes 0.
+        // NOTE: -0 becomes +0.
         if (remainder == 0 && exponent == 0) {
             // It's an integer.
             return JSON(signInfo & NEGATIVE ? -integer : integer);
@@ -1189,9 +1182,7 @@ private struct JSONReader(bool Spaces = Spaces.on, T) {
 
         popFront();
 
-        static if (Spaces) {
-            skipWhitespace();
-        }
+        skipWhitespace();
 
         if (front() == ']') {
             popFront();
@@ -1201,9 +1192,7 @@ private struct JSONReader(bool Spaces = Spaces.on, T) {
         while (true) {
             arr ~= parseValue();
 
-            static if (Spaces) {
-                skipWhitespace();
-            }
+            skipWhitespace();
 
             if (front() == ']') {
                 // We hit the end of the array
@@ -1212,12 +1201,10 @@ private struct JSONReader(bool Spaces = Spaces.on, T) {
             }
 
             if (moveFront() != ',') {
-                complain("Expected ]");
+                throw complaint("Expected ]");
             }
 
-            static if (Spaces) {
-                skipWhitespace();
-            }
+            skipWhitespace();
         }
 
         return arr;
@@ -1228,9 +1215,7 @@ private struct JSONReader(bool Spaces = Spaces.on, T) {
 
         popFront();
 
-        static if (Spaces) {
-            skipWhitespace();
-        }
+        skipWhitespace();
 
         if (front() == '}') {
             popFront();
@@ -1241,23 +1226,17 @@ private struct JSONReader(bool Spaces = Spaces.on, T) {
         while (true) {
             string key = parseString();
 
-            static if (Spaces) {
-                skipWhitespace();
-            }
+            skipWhitespace();
 
             if (moveFront() != ':') {
-                complain("Expected :");
+                throw complaint("Expected :");
             }
 
-            static if (Spaces) {
-                skipWhitespace();
-            }
+            skipWhitespace();
 
             obj[key] = parseValue();
 
-            static if (Spaces) {
-                skipWhitespace();
-            }
+            skipWhitespace();
 
             if (front() == '}') {
                 // We hit the end of the object.
@@ -1266,12 +1245,10 @@ private struct JSONReader(bool Spaces = Spaces.on, T) {
             }
 
             if (moveFront() != ',') {
-                complain("Expected }");
+                throw complaint("Expected }");
             }
 
-            static if (Spaces) {
-                skipWhitespace();
-            }
+            skipWhitespace();
         }
 
         return obj;
@@ -1280,7 +1257,7 @@ private struct JSONReader(bool Spaces = Spaces.on, T) {
     void parseChars(in string matching) {
         foreach(c; matching) {
             if (moveFront() != c) {
-                complain("Invalid input");
+                throw complaint("Invalid input");
             }
         }
     }
@@ -1310,29 +1287,20 @@ private struct JSONReader(bool Spaces = Spaces.on, T) {
         case '-': case '0': .. case '9':
             return parseNumber();
         default:
-            complain("Invalid input");
-            assert(0);
+            throw complaint("Invalid input");
         }
     }
 
     JSON parseJSON() {
-        static if (Spaces) {
-            skipWhitespace();
-        }
+        skipWhitespace();
 
         JSON val = parseValue();
 
-        static if (Spaces) {
-            if (!empty()) {
-                skipWhitespace!true();
+        if (!empty()) {
+            skipWhitespace!true();
 
-                if (!empty()) {
-                    complain("Trailing character found");
-                }
-            }
-        } else {
             if (!empty()) {
-                complain("Trailing character found");
+                throw complaint("Trailing character found");
             }
         }
 
@@ -1340,19 +1308,19 @@ private struct JSONReader(bool Spaces = Spaces.on, T) {
     }
 }
 
-JSON parseJSON(bool Spaces = Spaces.on, T)(T jsonRange)
-if(isInputRange!T && is(ElementType!T : dchar)) {
-    return JSONReader!(Spaces, T)(jsonRange).parseJSON();
+JSON parseJSON(InputRange)(InputRange jsonRange)
+if(isInputRange!InputRange && is(ElementType!InputRange : dchar)) {
+    return JSONReader!InputRange(jsonRange).parseJSON();
 }
 
-JSON parseJSON(bool Spaces = Spaces.on, T)(T jsonRange)
-if(isInputRange!T && isInputRange!(ElementType!T)
-&& is(ElementType!(ElementType!T) : dchar)) {
-    return parseJSON!(Spaces, T)(joiner(jsonRange));
+JSON parseJSON(InputRange)(InputRange jsonRange)
+if(isInputRange!InputRange && isInputRange!(ElementType!InputRange)
+&& is(ElementType!(ElementType!InputRange) : dchar)) {
+    return parseJSON!InputRange(joiner(jsonRange));
 }
 
-JSON parseJSON(bool Spaces = Spaces.on, size_t chunkSize = 4096)(File file) {
-    return parseJSON!(Spaces)(file.byChunk(chunkSize));
+JSON parseJSON(size_t chunkSize = 4096)(File file) {
+    return parseJSON(file.byChunk(chunkSize));
 }
 
 // TODO: immutable JSON?
