@@ -1254,7 +1254,7 @@ private struct JSONReader(InputRange) {
         return obj;
     }
 
-    void parseChars(in string matching) {
+    void parseChars(string matching)() {
         foreach(c; matching) {
             if (moveFront() != c) {
                 throw complaint("Invalid input");
@@ -1265,15 +1265,21 @@ private struct JSONReader(InputRange) {
     JSON parseValue() {
         switch (front()) {
         case 't':
-            parseChars("true");
+            popFront();
+
+            parseChars!"rue"();
 
             return JSON(true);
         case 'f':
-            parseChars("false");
+            popFront();
+
+            parseChars!"alse"();
 
             return JSON(false);
         case 'n':
-            parseChars("null");
+            popFront();
+
+            parseChars!"ull"();
 
             return JSON(null);
         case '{':
