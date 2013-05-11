@@ -948,6 +948,8 @@ private struct JSONReader(InputRange) {
     void popFront() {
         ++col;
 
+        scope(failure) --col;
+
         try {
             jsonRange.popFront();
         } catch {
@@ -964,10 +966,18 @@ private struct JSONReader(InputRange) {
     }
 
     auto moveFront() {
-        auto c = front();
-        popFront();
+        ++col;
 
-        return c;
+        scope(failure) --col;
+
+        try {
+            auto c = jsonRange.front();
+            jsonRange.popFront();
+
+            return c;
+        } catch {
+            throw complaint("Unexpected end of input");
+        }
     }
 
     void skipWhitespace(bool last = false)() {
@@ -1169,6 +1179,7 @@ private struct JSONReader(InputRange) {
         }
 
         if (exponent != 0) {
+            // Raise the whole number to the power of the exponent.
             return JSON(whole * (10.0 ^^
                 (signInfo & EXP_NEGATIVE ? -exponent : exponent)));
         }
