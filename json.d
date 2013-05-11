@@ -65,6 +65,7 @@ import std.string;
 import std.uni;
 import std.utf : toUTF8;
 import std.stdio;
+import std.math;
 
 version(unittest) {
     import std.exception;
@@ -285,7 +286,7 @@ public:
      * Returns: The length of the inner JSON array or object.
      * Throws: Exception when the JSON type is not an array or object.
      */
-    @property size_t length() const {
+    @trusted @property size_t length() const {
         if (_type == JSON_TYPE.ARRAY) {
            return _array.length;
         } else if (_type == JSON_TYPE.OBJECT) {
@@ -307,7 +308,7 @@ public:
         }
     }
 
-    string toString() const {
+    @trusted string toString() const {
         with(JSON_TYPE) final switch (_type) {
         case BOOL:
             return _boolean ? "true" : "false";
@@ -327,7 +328,7 @@ public:
     }
 
     // Casting to bool must never throw an exception.
-    nothrow inout(T) opCast(T)() inout if(is(T == bool)) {
+    @trusted nothrow inout(T) opCast(T)() inout if(is(T == bool)) {
         with(JSON_TYPE) final switch (_type) {
         case BOOL:
             return cast(T) _boolean;
@@ -351,7 +352,7 @@ public:
     }
 
     // Casting otherwise can throw, but is pure.
-    pure inout(T) opCast(T)() inout if(!is(T == bool)) {
+    @trusted pure inout(T) opCast(T)() inout if(!is(T == bool)) {
         static if (__traits(isArithmetic, T)) {
             with(JSON_TYPE) switch (_type) {
             case BOOL:
@@ -423,15 +424,16 @@ public:
         array[index] = value;
     }
 
-    pure void opIndexAssign(T)(T value, string key) {
+    @trusted pure void opIndexAssign(T)(T value, string key) {
         object[key] = value;
     }
 
-    pure inout(JSON*) opBinaryRight(string op : "in")(string key) inout {
+    @trusted pure inout(JSON*)
+    opBinaryRight(string op : "in") (string key) inout {
         return key in object;
     }
 
-    int opApply(int delegate(ref JSON val) dg) {
+    @trusted int opApply(int delegate(ref JSON val) dg) {
         int result;
 
         if (_type == JSON_TYPE.ARRAY) {
@@ -451,7 +453,7 @@ public:
         return result;
     }
 
-    int opApply(int delegate(string key, ref JSON val) dg) {
+    @trusted int opApply(int delegate(string key, ref JSON val) dg) {
         int result;
 
         if (_type == JSON_TYPE.OBJECT) {
@@ -471,7 +473,7 @@ public:
         return result;
     }
 
-    int opApply(int delegate(size_t index, ref JSON val) dg) {
+    @trusted int opApply(int delegate(size_t index, ref JSON val) dg) {
         if(_type == JSON_TYPE.OBJECT) {
             throw new Exception("index-value foreach not supported for "
                 ~ "objects!");
@@ -490,7 +492,7 @@ public:
         return result;
     }
 
-    int opApplyReverse(int delegate(ref JSON val) dg) {
+    @trusted int opApplyReverse(int delegate(ref JSON val) dg) {
         if (_type == JSON_TYPE.OBJECT) {
             // Map are unordered, so the same code for foreach can be used.
             return opApply(dg);
@@ -509,7 +511,7 @@ public:
         return result;
     }
 
-    int opApplyReverse(int delegate(string key, ref JSON val) dg) {
+    @trusted int opApplyReverse(int delegate(string key, ref JSON val) dg) {
         if (_type == JSON_TYPE.OBJECT) {
             return opApply(dg);
         }
@@ -527,7 +529,7 @@ public:
         return result;
     }
 
-    int opApplyReverse(int delegate(size_t index, ref JSON val) dg) {
+    @trusted int opApplyReverse(int delegate(size_t index, ref JSON val) dg) {
         if(_type == JSON_TYPE.OBJECT) {
             throw new Exception("index-value foreach_reverse not supported "
                 ~ "for objects!");
@@ -546,7 +548,8 @@ public:
         return result;
     }
 
-    nothrow bool opEquals(T)(inout(T) other) inout
+    // TODO: @safe pure?
+    @trusted nothrow bool opEquals(T)(inout(T) other) inout
     if(!is(T == typeof(null))) {
         static if(is(T == JSON)) {
             if (_type != other._type) {
@@ -925,7 +928,12 @@ string toJSON(int spaces = 0)(in JSON json) {
     return result.data();
 }
 
-private struct JSONReader(T) {
+enum Spaces : bool {
+    off,
+    on
+}
+
+private struct JSONReader(bool Spaces = Spaces.on, T) {
     T jsonRange;
     long line = 1;
     long col = 1;
@@ -938,43 +946,63 @@ private struct JSONReader(T) {
         throw new JSONParseException(reason, line, col);
     }
 
-    void popFront() {
-        if (empty()) {
-            complain("Unexpected end of input");
-        }
-
-        ++col;
-
-        jsonRange.popFront();
-    }
-
-    dchar front() {
-        if (empty()) {
-            complain("Unexpected end of input");
-        }
-
-        return jsonRange.front();
-    }
-
     bool empty() {
         return jsonRange.empty();
     }
 
-    dchar moveFront() {
-        dchar c = front();
+    void popFront() {
+        ++col;
+
+        try {
+            jsonRange.popFront();
+        } catch {
+            complain("Unexpected end of input");
+            assert(0);
+        }
+    }
+
+    auto front() {
+        try {
+            return jsonRange.front();
+        } catch {
+            complain("Unexpected end of input");
+            assert(0);
+        }
+    }
+
+    auto moveFront() {
+        auto c = front();
         popFront();
 
         return c;
     }
 
-    void skipWhitespace() {
-        while (!empty() && isWhite(front())) {
+    void skipWhitespace(bool last = false)() {
+        while (true) {
+            // empty checks only need to happen when reading whitespace
+            // at the end of the stream.
+            static if (last) {
+                if (empty()) {
+                    return;
+                }
+            }
+
+            if (!isWhite(front())) {
+                return;
+            }
+
             // Accept \n, \r, or \r\n for newlines.
             // Skip every other whitespace character.
             switch (moveFront()) {
             case '\r':
-                if (!empty() && front() == '\n') {
-                    popFront();
+                static if (last) {
+                    if (!empty() && front() == '\n') {
+                        popFront();
+                    }
+                } else {
+                    if (front() == '\n') {
+                        popFront();
+                    }
                 }
             case '\n':
                 ++line;
@@ -1072,16 +1100,25 @@ private struct JSONReader(T) {
     }
 
     JSON parseNumber() {
-        bool floating = false;
+        enum byte NEGATIVE = 1;
+        enum byte EXP_NEGATIVE = 2;
 
-        auto result = appender!string();
+        long integer   = 0;
+        long remainder = 0;
+        short exponent = 0;
+        byte signInfo  = 0;
 
-        void parseDigits() {
+        // Accumulate digits reading left-to-right in a number.
+        void parseDigits(T)(ref T accum) {
             while (!empty()) {
                 switch(front()) {
                 case '0': .. case '9':
-                    result.put(moveFront());
-                    break;
+                    accum = cast(T) (accum * 10 + (moveFront() - '0'));
+
+                    if (accum < 0) {
+                        complain("overflow error!");
+                    }
+                break;
                 default:
                     return;
                 }
@@ -1089,68 +1126,84 @@ private struct JSONReader(T) {
         }
 
         if (front() == '-') {
-            result.put(moveFront());
+            popFront();
+
+            signInfo = NEGATIVE;
         }
 
-        switch(front()) {
-        case '0':
-            result.put(moveFront());
-        break;
-        case '1': .. case '9':
-            parseDigits();
-        break;
-        default:
-            complain("Invalid input");
-        break;
+        if (front() == '0') {
+            popFront();
         }
+
+        parseDigits(integer);
 
         if (!empty() && front() == '.') {
-            floating = true;
+            popFront();
 
-            result.put(moveFront());
-
-            parseDigits();
+            parseDigits(remainder);
         }
 
         if (!empty() && (front() == 'e' || front() == 'E')) {
-            floating = true;
+            popFront();
 
-            result.put(moveFront());
-
-            if(front() == '+' || front() == '-') {
-                result.put(moveFront());
+            switch (front()) {
+            case '-':
+                signInfo |= EXP_NEGATIVE;
+            case '+':
+                popFront();
+            default:
+            break;
             }
 
-            parseDigits();
+            parseDigits(exponent);
         }
 
-        string str = result.data();
-
-        if (floating) {
-            return JSON(parse!real(str));
+        // XXX: Negative 0 becomes 0.
+        if (remainder == 0 && exponent == 0) {
+            // It's an integer.
+            return JSON(signInfo & NEGATIVE ? -integer : integer);
         }
 
-        return JSON(parse!long(str));
+        real whole = cast(real) integer;
+
+        if (remainder != 0) {
+            // Add in the remainder.
+            whole += remainder / (10.0 ^^ (floor(log10(remainder)) + 1));
+        }
+
+        if (signInfo & NEGATIVE) {
+            whole = -whole;
+        }
+
+        if (exponent != 0) {
+            return JSON(whole * (10.0 ^^
+                (signInfo & EXP_NEGATIVE ? -exponent : exponent)));
+        }
+
+
+        return JSON(whole);
     }
 
     JSON[] parseArray() {
         JSON[] arr;
 
-        if (moveFront() != '[') {
-            complain("Expected [");
+        popFront();
+
+        static if (Spaces) {
+            skipWhitespace();
+        }
+
+        if (front() == ']') {
+            popFront();
+            return arr;
         }
 
         while (true) {
-            skipWhitespace();
-
-            if (front() == ']') {
-                popFront();
-                break;
-            }
-
             arr ~= parseValue();
 
-            skipWhitespace();
+            static if (Spaces) {
+                skipWhitespace();
+            }
 
             if (front() == ']') {
                 // We hit the end of the array
@@ -1161,6 +1214,10 @@ private struct JSONReader(T) {
             if (moveFront() != ',') {
                 complain("Expected ]");
             }
+
+            static if (Spaces) {
+                skipWhitespace();
+            }
         }
 
         return arr;
@@ -1169,31 +1226,38 @@ private struct JSONReader(T) {
     JSON[string] parseObject() {
         JSON[string] obj;
 
-        if (moveFront() != '{') {
-            complain("Expected {");
+        popFront();
+
+        static if (Spaces) {
+            skipWhitespace();
+        }
+
+        if (front() == '}') {
+            popFront();
+
+            return obj;
         }
 
         while (true) {
-            skipWhitespace();
-
-            if (front() == '}') {
-                popFront();
-                break;
-            }
-
             string key = parseString();
 
-            skipWhitespace();
+            static if (Spaces) {
+                skipWhitespace();
+            }
 
             if (moveFront() != ':') {
                 complain("Expected :");
             }
 
-            skipWhitespace();
+            static if (Spaces) {
+                skipWhitespace();
+            }
 
             obj[key] = parseValue();
 
-            skipWhitespace();
+            static if (Spaces) {
+                skipWhitespace();
+            }
 
             if (front() == '}') {
                 // We hit the end of the object.
@@ -1203,6 +1267,10 @@ private struct JSONReader(T) {
 
             if (moveFront() != ',') {
                 complain("Expected }");
+            }
+
+            static if (Spaces) {
+                skipWhitespace();
             }
         }
 
@@ -1248,33 +1316,43 @@ private struct JSONReader(T) {
     }
 
     JSON parseJSON() {
-        skipWhitespace();
+        static if (Spaces) {
+            skipWhitespace();
+        }
 
         JSON val = parseValue();
 
-        skipWhitespace();
+        static if (Spaces) {
+            if (!empty()) {
+                skipWhitespace!true();
 
-        if (!empty()) {
-            complain("Trailing character found");
+                if (!empty()) {
+                    complain("Trailing character found");
+                }
+            }
+        } else {
+            if (!empty()) {
+                complain("Trailing character found");
+            }
         }
 
         return val;
     }
 }
 
-JSON parseJSON(T)(T jsonRange)
+JSON parseJSON(bool Spaces = Spaces.on, T)(T jsonRange)
 if(isInputRange!T && is(ElementType!T : dchar)) {
-    return JSONReader!T(jsonRange).parseJSON();
+    return JSONReader!(Spaces, T)(jsonRange).parseJSON();
 }
 
-JSON parseJSON(T)(T jsonRange)
+JSON parseJSON(bool Spaces = Spaces.on, T)(T jsonRange)
 if(isInputRange!T && isInputRange!(ElementType!T)
 && is(ElementType!(ElementType!T) : dchar)) {
-    return parseJSON(joiner(jsonRange));
+    return parseJSON!(Spaces, T)(joiner(jsonRange));
 }
 
-JSON parseJSON(size_t chunkSize = 4096)(File file) {
-    return parseJSON(file.byChunk(chunkSize));
+JSON parseJSON(bool Spaces = Spaces.on, size_t chunkSize = 4096)(File file) {
+    return parseJSON!(Spaces)(file.byChunk(chunkSize));
 }
 
 // TODO: immutable JSON?
@@ -2767,7 +2845,13 @@ unittest {
     assert(cast(int) parseJSON(`-123E3`) == -123_000);
     assert(cast(int) parseJSON(`-123E+3`) == -123_000);
     assert(approxEqual(cast(double) parseJSON(`123E-3`), 123e-3, 0.001));
+    assert(approxEqual(cast(double) parseJSON(`12345678910.12345678910`),
+        12345678910.12345678910));
+    assert(approxEqual(cast(double) parseJSON(`-12345678910.12345678910`),
+        -12345678910.12345678910));
     assert(cast(int) parseJSON(`-0.`) == 0);
+    // Make sure long is represented precisely.
+    assert(cast(long) parseJSON(to!string(long.max)) == long.max);
 }
 
 // Test parseJSON for various arrays.
