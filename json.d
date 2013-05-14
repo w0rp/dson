@@ -1951,54 +1951,94 @@ unittest {
 }
 
 private struct JSONReader(InputRange) {
-    InputRange jsonRange;
+    InputRange inputRange;
     long line = 1;
     long column = 1;
 
-    this(InputRange jsonRange) {
-        this.jsonRange = jsonRange;
+    static if (isSomeString!InputRange) {
+        size_t rangeIndex = 0;
+    }
+
+    this(InputRange inputRange) {
+        this.inputRange = inputRange;
     }
 
     auto complaint(string reason) {
         return new JSONParseException(reason, line, column);
     }
 
-    bool empty() {
-        return jsonRange.empty();
-    }
+    static if (isSomeString!InputRange) {
+        // Optimisation for strings.
+        // Using an index and checking the length is faster.
 
-    void popFront() {
-        ++column;
-
-        scope(failure) --column;
-
-        try {
-            jsonRange.popFront();
-        } catch {
-            throw complaint("Unexpected end of input");
+        bool empty() {
+            return rangeIndex >= inputRange.length;
         }
-    }
 
-    auto front() {
-        try {
-            return jsonRange.front();
-        } catch {
-            throw complaint("Unexpected end of input");
+        auto front() {
+            if (rangeIndex >= inputRange.length) {
+                throw complaint("Unexpected end of input");
+            }
+
+            return inputRange[rangeIndex];
         }
-    }
 
-    auto moveFront() {
-        ++column;
+        void popFront() {
+            if (rangeIndex >= inputRange.length) {
+                throw complaint("Unexpected end of input");
+            }
 
-        scope(failure) --column;
+            ++column;
+            ++rangeIndex;
+        }
 
-        try {
-            auto c = jsonRange.front();
-            jsonRange.popFront();
+        auto moveFront() {
+            if (rangeIndex >= inputRange.length) {
+                throw complaint("Unexpected end of input");
+            }
 
-            return c;
-        } catch {
-            throw complaint("Unexpected end of input");
+            ++column;
+
+            return inputRange[rangeIndex++];
+        }
+    } else {
+        bool empty() {
+            return inputRange.empty();
+        }
+
+        void popFront() {
+            ++column;
+
+            scope(failure) --column;
+
+            try {
+                inputRange.popFront();
+            } catch {
+                throw complaint("Unexpected end of input");
+            }
+        }
+
+        auto front() {
+            try {
+                return inputRange.front();
+            } catch {
+                throw complaint("Unexpected end of input");
+            }
+        }
+
+        auto moveFront() {
+            ++column;
+
+            scope(failure) --column;
+
+            try {
+                auto c = inputRange.front();
+                inputRange.popFront();
+
+                return c;
+            } catch {
+                throw complaint("Unexpected end of input");
+            }
         }
     }
 
