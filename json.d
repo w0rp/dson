@@ -1564,9 +1564,9 @@ unittest {
     auto special = left.concat(right).concat(new JSON[1]);
 
     assert(special.length == 3);
-    assert(special[0] == 1);;
-    assert(special[1] == 2);;
-    assert(special[2].isNull);;
+    assert(special[0] == 1);
+    assert(special[1] == 2);
+    assert(special[2].isNull);
 }
 
 /**
@@ -2069,9 +2069,11 @@ private struct JSONReader(InputRange) {
                         popFront();
                     }
                 }
+            goto case;
             case '\n':
                 ++line;
                 column = 1;
+            break;
             default:
             }
         }
@@ -2135,7 +2137,6 @@ private struct JSONReader(InputRange) {
                         break;
                         default:
                             throw complaint("Expected a hex character");
-                        break;
                         }
 
                         val += (moveFront() - adjust) << (4 * i);
@@ -2148,7 +2149,6 @@ private struct JSONReader(InputRange) {
                 break;
                 default:
                     throw complaint("Invalid escape character");
-                break;
                 }
             break;
             default:
@@ -2214,8 +2214,10 @@ private struct JSONReader(InputRange) {
             switch (front()) {
             case '-':
                 signInfo |= EXP_NEGATIVE;
+            goto case;
             case '+':
                 popFront();
+            break;
             default:
             break;
             }
@@ -2357,10 +2359,8 @@ private struct JSONReader(InputRange) {
             return JSON(null);
         case '{':
             return JSON(parseObject());
-        break;
         case '[':
             return JSON(parseArray());
-        break;
         case '"':
             return JSON(parseString());
         case '-': case '0': .. case '9':
