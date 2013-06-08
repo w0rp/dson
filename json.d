@@ -166,29 +166,10 @@ unittest {
 }
 
 /**
- * The root class for all JSON exceptions.
- */
-class JSONException : Exception {
-    this(string msg) {
-        super(msg);
-    }
-}
-
-/**
- * This class of exception may be thrown when something goes wrong
- * while writing JSON data.
- */
-class JSONWriteException : JSONException {
-    this(string msg) {
-        super(msg);
-    }
-}
-
-/**
  * This class of exception may be thrown when something goes wrong
  * while reading JSON data.
  */
-class JSONParseException : JSONException {
+class JSONParseException : Exception {
     /**
      * The line number (starting at 1) where the problem occurred.
      */
@@ -1698,10 +1679,12 @@ private void indent(T)(T outRange, int spaces) {
  *
  * Control characters found in the string will be either escaped or skipped.
  */
-private void writeJSONString(T)(T outRange, string str) {
+void writeJSONString(OutputRange)
+(string str, OutputRange outRange)
+if(isOutputRange!(OutputRange, char)) {
     outRange.put('"');
 
-    foreach(dchar c; str) {
+    foreach(c; str) {
         switch (c) {
         case '"':
             copy(`\"`, outRange);
@@ -1728,15 +1711,24 @@ private void writeJSONString(T)(T outRange, string str) {
             copy(`\t`, outRange);
         break;
         default:
-            // We'll just skip control characters.
-            if (!isControl(c)) {
-                outRange.put(c);
+            if (isControl(c)) {
+                copy(`\u00`, outRange);
+
+                char hexChar(ubyte num) {
+                    switch(num) {
+                    case 0: .. case 9:
+                        return cast(char) ('0' + num);
+                    case 10: .. case 15:
+                        return cast(char) (num - 10 + 'A');
+                    default:
+                        assert(false);
+                    }
+                }
+
+                outRange.put(hexChar(c / 16));
+                outRange.put(hexChar(c % 16));
             } else {
-                // We really must complain here. This is because control
-                // character, the most obvious of which being null, can
-                // break other readers in terrible ways.
-                throw new JSONWriteException("Invalid control character "
-                    ~ "found in string!");
+                outRange.put(c);
             }
         }
     }
@@ -1748,7 +1740,7 @@ private void writeJSONString(T)(T outRange, string str) {
  * Given a string to write to, write the JSON array to the string.
  */
 private void writeJSONArray(int spaces, T)
-(T outRange, in JSON[] array, int level) {
+(in JSON[] array, T outRange, int level) {
     outRange.put('[');
 
     for (size_t i = 0; i < array.length; ++i) {
@@ -1761,7 +1753,7 @@ private void writeJSONArray(int spaces, T)
             indent(outRange, spaces * (level + 1));
         }
 
-        writePrettyJSON!spaces(outRange, array[i], level + 1);
+        writePrettyJSON!spaces(array[i], outRange, level + 1);
     }
 
     static if (spaces > 0) {
@@ -1781,7 +1773,7 @@ private void writeJSONArray(int spaces, T)
  * Given a string to write to, write the JSON object to the string.
  */
 private void writeJSONObject(int spaces, T)
-(T outRange, in JSON[string] object, int level) {
+(in JSON[string] object, T outRange, int level) {
     outRange.put('{');
 
     bool first = true;
@@ -1796,7 +1788,7 @@ private void writeJSONObject(int spaces, T)
             indent(outRange, spaces * (level + 1));
         }
 
-        writeJSONString(outRange, key);
+        writeJSONString(key, outRange);
 
         outRange.put(':');
 
@@ -1804,7 +1796,7 @@ private void writeJSONObject(int spaces, T)
             outRange.put(' ');
         }
 
-        writePrettyJSON!spaces(outRange, val, level + 1);
+        writePrettyJSON!spaces(val, outRange, level + 1);
 
         first = false;
     }
@@ -1827,7 +1819,7 @@ private void writeJSONObject(int spaces, T)
  * Given a string to write to, write the JSON value to the string.
  */
 private void writePrettyJSON (int spaces = 0, T)
-(T outRange, in JSON json, int level = 0) {
+(in JSON json, T outRange, int level = 0) {
     with(JSON_TYPE) final switch (json.type) {
     case NULL:
         outRange.put("null");
@@ -1842,13 +1834,13 @@ private void writePrettyJSON (int spaces = 0, T)
         copy(to!string(json._floating), outRange);
     break;
     case STRING:
-        writeJSONString(outRange, json._str);
+        writeJSONString(json._str, outRange);
     break;
     case ARRAY:
-        writeJSONArray!spaces(outRange, json._array, level);
+        writeJSONArray!spaces(json._array, outRange, level);
     break;
     case OBJECT:
-        writeJSONObject!spaces(outRange, json._object, level);
+        writeJSONObject!spaces(json._object, outRange, level);
     break;
     }
 }
@@ -1866,7 +1858,7 @@ void writeJSON(int spaces = 0, OutputRange)
 if(isOutputRange!(OutputRange, dchar)) {
     static assert(spaces >= 0, "Negative number of spaces for writeJSON.");
 
-    writePrettyJSON!(spaces, OutputRange)(outputRange, json);
+    writePrettyJSON!(spaces, OutputRange)(json, outputRange);
 }
 
 /**
