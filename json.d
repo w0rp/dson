@@ -2166,20 +2166,25 @@ private struct JSONReader(InputRange) {
         byte signInfo  = 0;
 
         // Accumulate digits reading left-to-right in a number.
-        void parseDigits(T)(ref T accum) {
+        size_t parseDigits(T)(ref T accum) {
+            size_t digitCount = 0;
+
             while (!empty()) {
                 switch(front()) {
                 case '0': .. case '9':
                     accum = cast(T) (accum * 10 + (moveFront() - '0'));
+                    ++digitCount;
 
                     if (accum < 0) {
                         throw complaint("overflow error!");
                     }
                 break;
                 default:
-                    return;
+                    return digitCount;
                 }
             }
+
+            return digitCount;
         }
 
         if (front() == '-') {
@@ -2194,10 +2199,12 @@ private struct JSONReader(InputRange) {
 
         parseDigits(integer);
 
+        size_t fractionalDigitCount = 0;
+
         if (!empty() && front() == '.') {
             popFront();
 
-            parseDigits(remainder);
+            fractionalDigitCount = parseDigits(remainder);
         }
 
         if (!empty() && (front() == 'e' || front() == 'E')) {
@@ -2227,7 +2234,7 @@ private struct JSONReader(InputRange) {
 
         if (remainder != 0) {
             // Add in the remainder.
-            whole += remainder / (10.0 ^^ (floor(log10(remainder)) + 1));
+            whole += remainder / (10.0 ^^ fractionalDigitCount);
         }
 
         if (signInfo & NEGATIVE) {
@@ -2593,4 +2600,14 @@ unittest {
     // FIXME: This fails.
     //immutable JSON j5 = "some text";
     //assert(j5 == "some text");
+}
+
+// Test for correct float parsing.
+unittest {
+    auto jsonString = `{"a":1.001,"b":1.02345,"c":1.05678}`;
+
+    auto object = parseJSON(jsonString);
+
+    assert(object["a"] == 1.001L);
+    assert(toJSON(object) == jsonString);
 }
