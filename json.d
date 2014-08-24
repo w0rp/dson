@@ -1711,7 +1711,10 @@ if(isOutputRange!(OutputRange, char)) {
             copy(`\t`, outRange);
         break;
         default:
-            if (isControl(c)) {
+            if (c > 127) {
+                // Let starting and continuation bytes pass through.
+                outRange.put(c);
+            } else if (isControl(c)) {
                 copy(`\u00`, outRange);
 
                 char hexChar(ubyte num) {
@@ -2610,4 +2613,17 @@ unittest {
 
     assert(object["a"] == 1.001L);
     assert(toJSON(object) == jsonString);
+}
+
+// Test for correct character encoding
+unittest {
+    auto obj = jsonObject();
+
+    obj["x"] = "é".toUpper();
+
+    assert(obj["x"] == "É");
+
+    auto str = obj.toJSON();
+
+    assert(str == `{"x":"É"}`);
 }
