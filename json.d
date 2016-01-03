@@ -2296,7 +2296,7 @@ private struct JSONReader(InputRange) {
             return obj;
         }
 
-        while (true) {
+        FieldLoop: while (true) {
             string key = parseString();
 
             skipWhitespace();
@@ -2311,17 +2311,27 @@ private struct JSONReader(InputRange) {
 
             skipWhitespace();
 
-            if (front() == '}') {
-                // We hit the end of the object.
+            // this switch statement stolen from SDC fork
+            switch(front()) {
+            case ',':
                 popFront();
-                break;
-            }
+                skipWhitespace();
 
-            if (moveFront() != ',') {
-                throw complaint("Expected }");
-            }
+                // Allow trailing comma.
+                version (dson_relaxed) if (front() == '}') {
+                    goto case '}';
+                }
 
-            skipWhitespace();
+                // Next field.
+                continue;
+
+            case '}':
+                popFront();
+                break FieldLoop;
+
+            default:
+                throw complaint("Expected , or }");
+            }
         }
 
         return obj;
@@ -2506,6 +2516,11 @@ unittest {
     assert(parseJSON(`{}`).length == 0);
     assert(parseJSON(" [\t \n] ").length == 0);
     assert(parseJSON(" {\r\n } ").length == 0);
+}
+
+//test trailing comma in objects
+version (dson_relaxed) unittest {
+    assert(parseJSON(`{ "a": 1 , }`) == parseJSON(`{"a":1}`));
 }
 
 // Test complicated parseJSON examples
