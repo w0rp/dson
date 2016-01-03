@@ -530,11 +530,7 @@ public:
         case ARRAY:
             return _array.length > 0;
         case OBJECT:
-            try {
                 return _object.length > 0;
-            } catch (Exception ex) {
-                return false;
-            }
         case NULL:
             return false;
         }
@@ -2018,19 +2014,11 @@ private struct JSONReader(InputRange) {
 
             scope(failure) --column;
 
-            try {
-                inputRange.popFront();
-            } catch {
-                throw complaint("Unexpected end of input");
-            }
+            inputRange.popFront();
         }
 
         auto front() {
-            try {
-                return inputRange.front();
-            } catch {
-                throw complaint("Unexpected end of input");
-            }
+            return inputRange.front();
         }
 
         auto moveFront() {
@@ -2038,14 +2026,10 @@ private struct JSONReader(InputRange) {
 
             scope(failure) --column;
 
-            try {
-                auto c = inputRange.front();
-                inputRange.popFront();
+            auto c = inputRange.front();
+            inputRange.popFront();
 
-                return c;
-            } catch {
-                throw complaint("Unexpected end of input");
-            }
+            return c;
         }
     }
 
