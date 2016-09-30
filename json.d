@@ -530,11 +530,7 @@ public:
         case ARRAY:
             return _array.length > 0;
         case OBJECT:
-            try {
                 return _object.length > 0;
-            } catch (Exception ex) {
-                return false;
-            }
         case NULL:
             return false;
         }
@@ -832,7 +828,7 @@ public:
                 // The types match, so this is true.
                 return true;
             }
-        } else static if(is(T : string)) {
+        } else static if(is(T : const(char[]))) {
             return _type == JSON_TYPE.STRING && _str == other;
         } else static if(isJSONArray!T) {
             if (_type != JSON_TYPE.ARRAY || _array.length != other.length) {
@@ -1896,6 +1892,15 @@ unittest {
     toJSON(JSON());
 }
 
+//is order independent for non-nested objects
+version(unittest) auto objectStringTest(R, Rs...)(R res, Rs components)
+{
+    return only(components)
+        .permutations
+        .map!(p => chain(`{`, p.joiner(`,`), `}`))
+        .canFind!equal(res);
+}
+
 // Test various kinds of output from toJSON with JSON types.
 unittest {
     assert(toJSON(JSON("bla\\")) == `"bla\\"`);
@@ -1914,7 +1919,8 @@ unittest {
         "djw\nw": 1337
     ]);
 
-    assert(toJSON(j1) == `{"abc\"":1234,"def":5,"djw\nw":1337}`);
+    assert(objectStringTest(toJSON(j1),
+        `"abc\"":1234`, `"def":5`, `"djw\nw":1337`));
 
     JSON j2 = convertJSON([
         "abc\"": ["bla", "bla", "bla"],
@@ -1922,8 +1928,10 @@ unittest {
         "djw\nw": ["beep", "boop"]
     ]);
 
-    assert(toJSON(j2) == `{"abc\"":["bla","bla","bla"],`
-        ~ `"def":[],"djw\nw":["beep","boop"]}`);
+    assert(objectStringTest(toJSON(j2),
+        `"abc\"":["bla","bla","bla"]`,
+        `"def":[]`,
+        `"djw\nw":["beep","boop"]`));
 }
 
 
@@ -2006,19 +2014,11 @@ private struct JSONReader(InputRange) {
 
             scope(failure) --column;
 
-            try {
-                inputRange.popFront();
-            } catch {
-                throw complaint("Unexpected end of input");
-            }
+            inputRange.popFront();
         }
 
         auto front() {
-            try {
-                return inputRange.front();
-            } catch {
-                throw complaint("Unexpected end of input");
-            }
+            return inputRange.front();
         }
 
         auto moveFront() {
@@ -2026,14 +2026,10 @@ private struct JSONReader(InputRange) {
 
             scope(failure) --column;
 
-            try {
-                auto c = inputRange.front();
-                inputRange.popFront();
+            auto c = inputRange.front();
+            inputRange.popFront();
 
-                return c;
-            } catch {
-                throw complaint("Unexpected end of input");
-            }
+            return c;
         }
     }
 
@@ -2607,12 +2603,16 @@ unittest {
 
 // Test for correct float parsing.
 unittest {
-    auto jsonString = `{"a":1.001,"b":1.02345,"c":1.05678}`;
+    import std.typecons : tuple;
+    auto jsonComponents = tuple(`"a":1.001`, `"b":1.02345`, `"c":1.05678`);
+    auto jsonString = `{` ~ jsonComponents[0]
+                    ~ `,` ~ jsonComponents[1]
+                    ~ `,` ~ jsonComponents[2] ~ `}`;
 
     auto object = parseJSON(jsonString);
 
     assert(object["a"] == 1.001L);
-    assert(toJSON(object) == jsonString);
+    assert(objectStringTest(toJSON(object), jsonComponents.expand));
 }
 
 // Test for correct character encoding
