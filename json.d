@@ -91,7 +91,7 @@ import std.array;
 import std.algorithm;
 import std.string;
 import std.uni;
-import std.utf : toUTF8;
+import std.utf : encode;
 import std.stdio;
 import std.math;
 
@@ -2136,7 +2136,8 @@ private struct JSONReader(InputRange) {
 
                     char[4] buf;
 
-                    result.put(toUTF8(buf, val));
+                    encode(buf, val);
+                    result.put(cast(string)buf);
                 break;
                 default:
                     throw complaint("Invalid escape character");
